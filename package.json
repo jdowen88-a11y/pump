@@ -1,0 +1,34 @@
+{
+  "name": "pump-sniper",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev src/index.ts",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply pump-sniper-db --local",
+    "db:migrate:prod": "wrangler d1 migrations apply pump-sniper-db",
+    "db:generate": "drizzle-kit generate:sqlite",
+    "pages:dev": "wrangler pages dev public",
+    "pages:deploy": "wrangler pages deploy public --project-name=pump-sniper-dashboard"
+  },
+  "dependencies": {
+    "hono": "^4.0.8",
+    "@hono/zod-validator": "^0.2.1",
+    "zod": "^3.22.4",
+    "jose": "^5.2.2",
+    "bcryptjs": "^2.4.3",
+    "drizzle-orm": "^0.30.4",
+    "drizzle-zod": "^0.5.1",
+    "@solana/web3.js": "^1.91.1",
+    "uuid": "^9.0.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240208.0",
+    "wrangler": "^3.32.0",
+    "drizzle-kit": "^0.21.1",
+    "typescript": "^5.3.3",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/uuid": "^9.0.8"
+  }
+}
