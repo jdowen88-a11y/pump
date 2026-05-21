@@ -1,0 +1,12 @@
+export const SOL_MINT = 'So11111111111111111111111111111111111111112';
+export const PUMPFUN_PROGRAM = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+export const PUMPFUN_WS_URL = 'wss://pumpportal.fun/api/ws';
+export const JUPITER_QUOTE_URL = 'https://quote-api.jup.ag/v6/quote';
+export const JUPITER_SWAP_URL = 'https://quote-api.jup.ag/v6/swap';
+export const SOLSCAN_API_URL = 'https://public-api.solscan.io';
+export const BIRDEYE_API_URL = 'https://public-api.birdeye.so/public';
+export const HELIUS_RPC_URL = 'https://mainnet.helius-rpc.com';
+export const MIN_PROFIT_THRESHOLD = 0.001; // SOL
+export const MAX_GAS_FEE = 0.000005; // SOL
+export const SCAM_THRESHOLD = 70;
+export const PROFIT_SCORE_THRESHOLD = 60;
