@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS audit_logs (
+id TEXT PRIMARY KEY,
+user_id TEXT REFERENCES users(id),
+action TEXT NOT NULL,
+details TEXT,
+ip_address TEXT,
+created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
