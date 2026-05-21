@@ -1,0 +1,29 @@
+name = "pump-sniper-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pump-sniper-db"
+database_id = "your-d1-database-id"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "your-kv-namespace-id"
+
+[observability]
+enabled = true
+
+[env.production]
+routes = [
+  { pattern = "api.sniper.yourdomain.com", zone_name = "yourdomain.com" }
+]
+
+[env.production.vars]
+JWT_SECRET = "your-production-jwt-secret-min-32-chars"
+SOLANA_RPC_URL = "https://mainnet.helius-rpc.com/?api-key=your-helius-key"
+PRIVATE_KEY = "your-solana-wallet-private-key-base58"
+HELIUS_API_KEY = "your-helius-api-key"
+BIRDEYE_API_KEY = "your-birdeye-api-key"
+ENVIRONMENT = "production"
