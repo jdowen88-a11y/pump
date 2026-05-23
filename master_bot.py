@@ -206,8 +206,8 @@ async def get_bonding_curve_price(client: AsyncClient, mint: str) -> float:
 class Analyzer:
     async def get_x_sentiment_bonus(self, mint: str, token_symbol: str = "") -> float:
         """
-        Fetch sentiment bonus for a token from X.
-        Returns value in roughly [-10, +10] range.
+        Uses X search to generate a sentiment bonus in roughly [-10, +10].
+        Heavier weight on recent activity and strong signals.
         """
         bearer_token = getattr(config, 'x_bearer_token', '')
         if not bearer_token:
@@ -219,36 +219,60 @@ class Analyzer:
         params = {
             "query": query,
             "max_results": 10,
-            "tweet.fields": "text"
+            "tweet.fields": "text,created_at,public_metrics"
         }
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, params=params, timeout=8) as resp:
+                async with session.get(url, headers=headers, params=params, timeout=10) as resp:
                     if resp.status != 200:
                         return 0.0
+
                     data = await resp.json()
                     tweets = data.get("data", [])
                     if not tweets:
                         return 0.0
 
-                    positive = ["moon", "pump", "buy", "gem", "alpha", "sending", "ape", "bullish", "sending it"]
-                    negative = ["rug", "scam", "dump", "dev sold", "honeypot", "avoid", "fud", "dead", "rug pull"]
+                    # Sentiment keywords with weights
+                    strong_positive = ["moon", "sending", "ape in", "alpha", "gem", "next 100x"]
+                    positive = ["buy", "pump", "bullish", "loading"]
+                    strong_negative = ["rug", "scam", "dev sold", "honeypot", "dumped", "avoid"]
+                    negative = ["fud", "dead", "slow", "exit"]
 
                     score = 0
                     for tweet in tweets:
                         text = tweet.get("text", "").lower()
+                        metrics = tweet.get("public_metrics", {})
+                        engagement = metrics.get("retweet_count", 0) + metrics.get("like_count", 0)
+
+                        local_score = 0
+                        for word in strong_positive:
+                            if word in text:
+                                local_score += 3
                         for word in positive:
                             if word in text:
-                                score += 1
+                                local_score += 1
+                        for word in strong_negative:
+                            if word in text:
+                                local_score -= 4
                         for word in negative:
                             if word in text:
-                                score -= 2
+                                local_score -= 2
 
-                    bonus = max(-10.0, min(10.0, score * 1.1))
+                        # Boost for high-engagement tweets
+                        if engagement > 50:
+                            local_score = int(local_score * 1.5)
+                        elif engagement > 20:
+                            local_score = int(local_score * 1.2)
+
+                        score += local_score
+
+                    # Normalize to -10 ~ +10
+                    bonus = max(-10.0, min(10.0, score / 2))
                     return round(bonus, 1)
+
         except Exception as e:
-            logger.warning(f"X sentiment error for {mint}: {e}")
+            logger.warning(f"X sentiment fetch failed for {mint}: {e}")
             return 0.0
 
     async def rug_score(self, mint: str, client: AsyncClient) -> int:
@@ -260,7 +284,7 @@ class Analyzer:
         except Exception:
             pass
 
-        # X sentiment bonus
+        # X / Grok sentiment hook
         sentiment_bonus = await self.get_x_sentiment_bonus(mint, mint[:6])
         score += int(sentiment_bonus)
 
