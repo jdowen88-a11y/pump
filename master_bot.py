@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 """
-MASTER SOLANA BOT v6.2 — Pump.fun Sniper + Portfolio Manager
-
-Fully async, Jupiter-powered, with real bonding curve pricing,
-conservative risk management, and proper PnL tracking on exits.
-
-See conversation history for full context and tuning.
+MASTER SOLANA BOT v6.2 — Pump.fun Sniper + Portfolio Manager (with 1 SOL + 0.5 SOL configs)
 """
 
 import os
@@ -36,9 +31,11 @@ console = Console()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("master")
 
+# ===================== DUAL CONFIGS (1 SOL + 0.5 SOL) =====================
+
 @dataclass
-class Config:
-    rpc_url: str = os.getenv("SOLANA_RPC_URL", "")
+class ConfigMain:
+    rpc_url: str = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
     pumpportal_ws: str = os.getenv("PUMPPORTAL_WS", "wss://pumpportal.fun/api/data")
     pumpportal_api_key: str = os.getenv("PUMPPORTAL_API_KEY", "")
     jupiter_url: str = os.getenv("JUPITER_URL", "https://quote-api.jup.ag/v6")
@@ -46,9 +43,9 @@ class Config:
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat: str = os.getenv("TELEGRAM_CHAT_ID", "")
 
-    max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", 3.0))
-    max_position_sol: float = float(os.getenv("MAX_POSITION_SOL", 1.5))
-    cooldown_min: int = int(os.getenv("COOLDOWN_MIN", 10))
+    max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", 1.0))
+    max_position_sol: float = float(os.getenv("MAX_POSITION_SOL", 0.2))
+    cooldown_min: int = int(os.getenv("COOLDOWN_MIN", 20))
     circuit_breaker_streak: int = int(os.getenv("CIRCUIT_STREAK", 3))
 
     default_buy_sol: float = float(os.getenv("BUY_SOL", 0.1))
@@ -57,9 +54,40 @@ class Config:
     tp_pct: float = float(os.getenv("TP_PCT", 60.0))
     sl_pct: float = float(os.getenv("SL_PCT", 25.0))
     trailing_pct: float = float(os.getenv("TRAILING", 18.0))
-    min_rug_score: int = int(os.getenv("MIN_RUG_SCORE", 50))
+    min_rug_score: int = int(os.getenv("MIN_RUG_SCORE", 55))
 
-config = Config()
+
+@dataclass
+class ConfigMini:
+    rpc_url: str = os.getenv("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
+    pumpportal_ws: str = os.getenv("PUMPPORTAL_WS", "wss://pumpportal.fun/api/data")
+    pumpportal_api_key: str = os.getenv("PUMPPORTAL_API_KEY", "")
+    jupiter_url: str = os.getenv("JUPITER_URL", "https://quote-api.jup.ag/v6")
+    # Mini wallet key (separate from MAIN)
+    private_key: str = os.getenv("PRIVATE_KEY_MINI", "")
+    telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    telegram_chat: str = os.getenv("TELEGRAM_CHAT_ID", "")
+
+    max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS_MINI", 0.5))
+    max_position_sol: float = float(os.getenv("MAX_POSITION_SOL_MINI", 0.1))
+    cooldown_min: int = int(os.getenv("COOLDOWN_MIN_MINI", 25))
+    circuit_breaker_streak: int = int(os.getenv("CIRCUIT_STREAK_MINI", 3))
+
+    default_buy_sol: float = float(os.getenv("BUY_SOL_MINI", 0.05))
+    slippage_bps: int = int(os.getenv("SLIPPAGE", 1200))
+    priority_fee: int = int(os.getenv("PRIORITY_FEE", 50000))
+    tp_pct: float = float(os.getenv("TP_PCT", 60.0))
+    sl_pct: float = float(os.getenv("SL_PCT", 25.0))
+    trailing_pct: float = float(os.getenv("TRAILING", 18.0))
+    min_rug_score: int = int(os.getenv("MIN_RUG_SCORE_MINI", 60))
+
+
+# Choose which config to use
+CONFIG_MODE = os.getenv("CONFIG_MODE", "MAIN")  # "MAIN" or "MINI"
+config = ConfigMain() if CONFIG_MODE == "MAIN" else ConfigMini()
+
+# ===================== (REST OF YOUR CORE LAYERS) =====================
+
 keypair = Keypair.from_base58_string(config.private_key) if config.private_key else None
 
 TRADE_CSV = "master_trades.csv"
@@ -67,15 +95,18 @@ if not os.path.exists(TRADE_CSV):
     with open(TRADE_CSV, "w", newline="") as f:
         csv.writer(f).writerow(["ts", "mint", "action", "sol", "pnl", "sig", "reason"])
 
+
 async def log_trade(mint: str, action: str, sol: float, pnl: float, sig: str, reason: str):
     with open(TRADE_CSV, "a", newline="") as f:
         csv.writer(f).writerow([datetime.utcnow().isoformat(), mint, action, sol, pnl, sig, reason])
+
 
 async def alert(msg: str):
     if config.telegram_token and config.telegram_chat:
         url = f"https://api.telegram.org/bot{config.telegram_token}/sendMessage"
         async with aiohttp.ClientSession() as s:
             await s.post(url, json={"chat_id": config.telegram_chat, "text": msg})
+
 
 # ===================== RISK ENGINE =====================
 @dataclass
@@ -289,6 +320,11 @@ class MasterBot:
         with Live(layout, refresh_per_second=3) as live:
             while True:
                 try:
+                    # Update total PnL from live positions before each render
+                    risk.total_pnl = sum(
+                        p.get("unrealized_pnl", 0) for p in risk.positions.values()
+                    )
+
                     event, data = await asyncio.wait_for(queue.get(), timeout=0.5)
                     if event == "new_token":
                         mint = data.get("mint", "")
@@ -296,12 +332,6 @@ class MasterBot:
                             await self.snipe(mint)
 
                     await self.manage_positions()
-
-                    # =============== ADDED IN BY ME ===============
-                    # Snapshot total PnL from current positions
-                    risk.total_pnl = sum(
-                        p.get("unrealized_pnl", 0) for p in risk.positions.values()
-                    )
 
                     s_table = Table(title="SNIPER")
                     for m in list(risk.positions.keys())[-5:]:
@@ -321,41 +351,11 @@ class MasterBot:
                     await asyncio.sleep(1)
 
 
-# ===================== TIGHTENED .env RECOMMENDATION (VERY DEFENSIVE FOR ~0.5 SOL STACK) =====================
-"""
-# ----- CORE CONNECTIONS -----
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-PUMPPORTAL_WS=wss://pumpportal.fun/api/data
-PUMPPORTAL_API_KEY=your_pumpportal_api_key_here
-
-PRIVATE_KEY=your_base58_private_key_for_mini_wallet
-
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF
-TELEGRAM_CHAT_ID=123456789
-
-# ----- RISK LIMITS (VERY DEFENSIVE FOR 0.5 SOL) -----
-MAX_DAILY_LOSS=0.5
-MAX_POSITION_SOL=0.1
-COOLDOWN_MIN=25
-CIRCUIT_STREAK=3
-
-# ----- MINI‑TRADE SIZING -----
-BUY_SOL=0.05
-SLIPPAGE=1200
-PRIORITY_FEE=50000
-TP_PCT=60.0
-SL_PCT=25.0
-TRAILING=18.0
-MIN_RUG_SCORE=60
-
-# ----- OPTIONAL -----
-# JITO_TIP_ACCOUNT=your_jito_tip_account_if_used
-"""
-
 if __name__ == "__main__":
     if not keypair:
-        console.print("[red]PRIVATE_KEY missing in .env[/red]")
+        console.print("[red]PRIVATE_KEY (or PRIVATE_KEY_MINI) missing in .env[/red]")
         exit(1)
+
     client = AsyncClient(config.rpc_url)
     bot = MasterBot(client)
     asyncio.run(bot.run())
