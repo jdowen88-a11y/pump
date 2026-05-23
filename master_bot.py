@@ -42,6 +42,7 @@ class ConfigMain:
     private_key: str = os.getenv("PRIVATE_KEY", "")
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    x_bearer_token: str = os.getenv("X_BEARER_TOKEN", "")
 
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", 1.0))
     max_position_sol: float = float(os.getenv("MAX_POSITION_SOL", 0.2))
@@ -63,10 +64,10 @@ class ConfigMini:
     pumpportal_ws: str = os.getenv("PUMPPORTAL_WS", "wss://pumpportal.fun/api/data")
     pumpportal_api_key: str = os.getenv("PUMPPORTAL_API_KEY", "")
     jupiter_url: str = os.getenv("JUPITER_URL", "https://quote-api.jup.ag/v6")
-    # Mini wallet key (separate from MAIN)
     private_key: str = os.getenv("PRIVATE_KEY_MINI", "")
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    x_bearer_token: str = os.getenv("X_BEARER_TOKEN", "")
 
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS_MINI", 0.5))
     max_position_sol: float = float(os.getenv("MAX_POSITION_SOL_MINI", 0.1))
@@ -203,14 +204,66 @@ async def get_bonding_curve_price(client: AsyncClient, mint: str) -> float:
 
 # ===================== ANALYZER =====================
 class Analyzer:
+    async def get_x_sentiment_bonus(self, mint: str, token_symbol: str = "") -> float:
+        """
+        Fetch sentiment bonus for a token from X.
+        Returns value in roughly [-10, +10] range.
+        """
+        bearer_token = getattr(config, 'x_bearer_token', '')
+        if not bearer_token:
+            return 0.0
+
+        query = f'"{mint}" OR "{token_symbol}" (pump OR solana OR "pump.fun")'
+        url = "https://api.twitter.com/2/tweets/search/recent"
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        params = {
+            "query": query,
+            "max_results": 10,
+            "tweet.fields": "text"
+        }
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, params=params, timeout=8) as resp:
+                    if resp.status != 200:
+                        return 0.0
+                    data = await resp.json()
+                    tweets = data.get("data", [])
+                    if not tweets:
+                        return 0.0
+
+                    positive = ["moon", "pump", "buy", "gem", "alpha", "sending", "ape", "bullish", "sending it"]
+                    negative = ["rug", "scam", "dump", "dev sold", "honeypot", "avoid", "fud", "dead", "rug pull"]
+
+                    score = 0
+                    for tweet in tweets:
+                        text = tweet.get("text", "").lower()
+                        for word in positive:
+                            if word in text:
+                                score += 1
+                        for word in negative:
+                            if word in text:
+                                score -= 2
+
+                    bonus = max(-10.0, min(10.0, score * 1.1))
+                    return round(bonus, 1)
+        except Exception as e:
+            logger.warning(f"X sentiment error for {mint}: {e}")
+            return 0.0
+
     async def rug_score(self, mint: str, client: AsyncClient) -> int:
         score = 55
         try:
             supply = await client.get_token_supply(Pubkey.from_string(mint))
             if supply.value and supply.value.ui_amount and supply.value.ui_amount > 1e9:
                 score -= 12
-        except:
+        except Exception:
             pass
+
+        # X sentiment bonus
+        sentiment_bonus = await self.get_x_sentiment_bonus(mint, mint[:6])
+        score += int(sentiment_bonus)
+
         return max(15, min(90, score))
 
 # ===================== FEEDS =====================
@@ -284,11 +337,10 @@ class MasterBot:
             if drop_from_peak > (config.trailing_pct / 100) or tp_hit or sl_hit:
                 logger.info(f"Exit triggered on {mint}")
 
-                # Estimate token amount roughly matching our size_sol
                 if pos["entry_price_sol"] > 0:
                     token_lots = int((pos["size_sol"] / pos["entry_price_sol"]) * 1_000_000)
                 else:
-                    token_lots = int(1_000_000)  # 1 token
+                    token_lots = int(1_000_000)
 
                 sell_quote = await self.jupiter.quote(
                     mint,
@@ -302,12 +354,10 @@ class MasterBot:
                     pnl = pos.get("unrealized_pnl", 0.0)
                     if sig:
                         await log_trade(mint, "SELL", 0.0, pnl, sig, "auto_exit")
-                    # Correct: successful sell → success=True
                     risk.record(mint, pos["size_sol"], True, pnl)
                 else:
                     logger.warning(f"No sell quote for {mint} at current price {current_price}")
 
-                # Remove position whether or not we got a quote
                 risk.positions.pop(mint, None)
 
     async def run(self):
@@ -320,7 +370,6 @@ class MasterBot:
         with Live(layout, refresh_per_second=3) as live:
             while True:
                 try:
-                    # Update total PnL from live positions before each render
                     risk.total_pnl = sum(
                         p.get("unrealized_pnl", 0) for p in risk.positions.values()
                     )
