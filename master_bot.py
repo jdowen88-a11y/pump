@@ -297,6 +297,12 @@ class MasterBot:
 
                     await self.manage_positions()
 
+                    # =============== ADDED IN BY ME ===============
+                    # Snapshot total PnL from current positions
+                    risk.total_pnl = sum(
+                        p.get("unrealized_pnl", 0) for p in risk.positions.values()
+                    )
+
                     s_table = Table(title="SNIPER")
                     for m in list(risk.positions.keys())[-5:]:
                         s_table.add_row(m[:8])
@@ -313,6 +319,32 @@ class MasterBot:
                 except Exception as e:
                     logger.error(str(e))
                     await asyncio.sleep(1)
+
+
+# ===================== TIGHTENED .env RECOMMENDATION (for 2–5 SOL stack) =====================
+"""
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+PUMPPORTAL_WS=wss://pumpportal.fun/api/data
+PUMPPORTAL_API_KEY=your_pumpportal_api_key
+
+PRIVATE_KEY=your_base58_private_key
+
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF
+TELEGRAM_CHAT_ID=123456789
+
+MAX_DAILY_LOSS=2.0
+MAX_POSITION_SOL=0.5
+COOLDOWN_MIN=15
+CIRCUIT_STREAK=3
+
+BUY_SOL=0.1
+SLIPPAGE=1200
+PRIORITY_FEE=50000
+TP_PCT=60.0
+SL_PCT=25.0
+TRAILING=18.0
+MIN_RUG_SCORE=50
+"""
 
 if __name__ == "__main__":
     if not keypair:
