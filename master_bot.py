@@ -321,29 +321,35 @@ class MasterBot:
                     await asyncio.sleep(1)
 
 
-# ===================== TIGHTENED .env RECOMMENDATION (for 2–5 SOL stack) =====================
+# ===================== TIGHTENED .env RECOMMENDATION (VERY DEFENSIVE FOR ~0.5 SOL STACK) =====================
 """
+# ----- CORE CONNECTIONS -----
 SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 PUMPPORTAL_WS=wss://pumpportal.fun/api/data
-PUMPPORTAL_API_KEY=your_pumpportal_api_key
+PUMPPORTAL_API_KEY=your_pumpportal_api_key_here
 
-PRIVATE_KEY=your_base58_private_key
+PRIVATE_KEY=your_base58_private_key_for_mini_wallet
 
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF
 TELEGRAM_CHAT_ID=123456789
 
-MAX_DAILY_LOSS=2.0
-MAX_POSITION_SOL=0.5
-COOLDOWN_MIN=15
+# ----- RISK LIMITS (VERY DEFENSIVE FOR 0.5 SOL) -----
+MAX_DAILY_LOSS=0.5
+MAX_POSITION_SOL=0.1
+COOLDOWN_MIN=25
 CIRCUIT_STREAK=3
 
-BUY_SOL=0.1
+# ----- MINI‑TRADE SIZING -----
+BUY_SOL=0.05
 SLIPPAGE=1200
 PRIORITY_FEE=50000
 TP_PCT=60.0
 SL_PCT=25.0
 TRAILING=18.0
-MIN_RUG_SCORE=50
+MIN_RUG_SCORE=60
+
+# ----- OPTIONAL -----
+# JITO_TIP_ACCOUNT=your_jito_tip_account_if_used
 """
 
 if __name__ == "__main__":
