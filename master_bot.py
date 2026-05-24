@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MASTER SOLANA BOT v6.2 — Pump.fun Sniper + Portfolio Manager (with 1 SOL + 0.5 SOL configs + DRY_RUN)
+MASTER SOLANA BOT v6.2 — Pump.fun Sniper + Portfolio Manager (with 1 SOL + 0.5 SOL configs)
 """
 
 import os
@@ -43,7 +43,6 @@ class ConfigMain:
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat: str = os.getenv("TELEGRAM_CHAT_ID", "")
     x_bearer_token: str = os.getenv("X_BEARER_TOKEN", "")
-    dry_run: bool = os.getenv("DRY_RUN", "true").lower() == "true"
 
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", 1.0))
     max_position_sol: float = float(os.getenv("MAX_POSITION_SOL", 0.2))
@@ -69,7 +68,6 @@ class ConfigMini:
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_chat: str = os.getenv("TELEGRAM_CHAT_ID", "")
     x_bearer_token: str = os.getenv("X_BEARER_TOKEN", "")
-    dry_run: bool = os.getenv("DRY_RUN", "true").lower() == "true"
 
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS_MINI", 0.5))
     max_position_sol: float = float(os.getenv("MAX_POSITION_SOL_MINI", 0.1))
@@ -89,7 +87,7 @@ class ConfigMini:
 CONFIG_MODE = os.getenv("CONFIG_MODE", "MAIN")  # "MAIN" or "MINI"
 config = ConfigMain() if CONFIG_MODE == "MAIN" else ConfigMini()
 
-# ===================== CORE LAYERS =====================
+# ===================== (REST OF YOUR CORE LAYERS) =====================
 
 keypair = Keypair.from_base58_string(config.private_key) if config.private_key else None
 
@@ -131,16 +129,11 @@ class RiskEngine:
 
     def can_trade(self, buy_sol: float) -> bool:
         self.check_daily_reset()
-        if self.daily_loss >= config.max_daily_loss:
-            return False
-        if len(self.positions) >= 5:
-            return False
-        if self.loss_streak >= config.circuit_breaker_streak:
-            return False
-        if self.last_loss and (datetime.utcnow() - self.last_loss).total_seconds() < config.cooldown_min * 60:
-            return False
-        if buy_sol > config.max_position_sol:
-            return False
+        if self.daily_loss >= config.max_daily_loss: return False
+        if len(self.positions) >= 5: return False
+        if self.loss_streak >= config.circuit_breaker_streak: return False
+        if self.last_loss and (datetime.utcnow() - self.last_loss).total_seconds() < config.cooldown_min * 60: return False
+        if buy_sol > config.max_position_sol: return False
         return True
 
     def record(self, mint: str, sol: float, success: bool, pnl: float = 0.0):
@@ -182,15 +175,13 @@ class Jupiter:
         }
         async with self.session.post(f"{config.jupiter_url}/swap", json=payload) as r:
             data = await r.json()
-            if "swapTransaction" not in data:
-                return None
+            if "swapTransaction" not in data: return None
             tx = VersionedTransaction.from_bytes(base64.b64decode(data["swapTransaction"]))
             blockhash = (await self.client.get_latest_blockhash()).value.blockhash
             tx.message.recent_blockhash = blockhash
             tx.sign([keypair])
             result = await self.client.send_transaction(tx)
             return str(result.value)
-
 
 # ===================== BONDING CURVE PRICE =====================
 async def get_bonding_curve_price(client: AsyncClient, mint: str) -> float:
@@ -210,7 +201,6 @@ async def get_bonding_curve_price(client: AsyncClient, mint: str) -> float:
         return virtual_sol_reserves / virtual_token_reserves
     except Exception:
         return 0.0
-
 
 # ===================== ANALYZER =====================
 class Analyzer:
@@ -294,12 +284,11 @@ class Analyzer:
         except Exception:
             pass
 
-        # X sentiment bonus
+        # X / Grok sentiment hook
         sentiment_bonus = await self.get_x_sentiment_bonus(mint, mint[:6])
         score += int(sentiment_bonus)
 
         return max(15, min(90, score))
-
 
 # ===================== FEEDS =====================
 class Feeds:
@@ -323,7 +312,6 @@ class Feeds:
                 logger.warning(f"PumpPortal reconnect: {e}")
                 await asyncio.sleep(5)
 
-
 # ===================== MASTER BOT =====================
 class MasterBot:
     def __init__(self, client: AsyncClient):
@@ -333,46 +321,24 @@ class MasterBot:
         self.analyzer = Analyzer()
 
     async def snipe(self, mint: str):
-        if not risk.can_trade(config.default_buy_sol):
-            return
+        if not risk.can_trade(config.default_buy_sol): return
         score = await self.analyzer.rug_score(mint, self.client)
-        if score < config.min_rug_score:
-            return
+        if score < config.min_rug_score: return
 
         amount = int(config.default_buy_sol * 1_000_000_000)
-        quote = await self.jupiter.quote(
-            "So11111111111111111111111111111111111111112",
-            mint,
-            amount,
-            config.slippage_bps
-        )
-        if not quote:
-            return
+        quote = await self.jupiter.quote("So11111111111111111111111111111111111111112", mint, amount, config.slippage_bps)
+        if not quote: return
 
-        price = await get_bonding_curve_price(self.client, mint)
-        pnl = 0.0
-
-        # ========== DRY_RUN / REAL SPLIT ==========
-        if config.dry_run:
-            sig = f"DRY_RUN_SNIPED_{mint[:8]}"
-            await log_trade(mint, "DRY SNIPED", config.default_buy_sol, pnl, sig, f"score_{score}")
-            await alert(f"DRY SNIPED {mint[:6]} | score {score} (fake)")
+        sig = await self.jupiter.execute_swap(quote)
+        if sig:
+            price = await get_bonding_curve_price(self.client, mint)
+            await log_trade(mint, "SNIPED", config.default_buy_sol, 0, sig, f"score_{score}")
+            await alert(f"SNIPED {mint[:6]} | score {score}")
             risk.record(mint, config.default_buy_sol, True)
             pos = risk.positions[mint]
-            pos["entry_price_sol"] = 0.01
-            pos["peak_price"] = 0.01
-        else:
-            sig = await self.jupiter.execute_swap(quote)
-            if sig:
-                await log_trade(mint, "SNIPED", config.default_buy_sol, pnl, sig, f"score_{score}")
-                await alert(f"SNIPED {mint[:6]} | score {score}")
-                risk.record(mint, config.default_buy_sol, True)
-                pos = risk.positions[mint]
-                pos["entry_price_sol"] = price
-                pos["peak_price"] = price
-        # ==========================================
-
-        await asyncio.sleep(1.5)
+            pos["entry_price_sol"] = price
+            pos["peak_price"] = price
+            await asyncio.sleep(1.5)
 
     async def manage_positions(self):
         for mint, pos in list(risk.positions.items()):
@@ -406,24 +372,15 @@ class MasterBot:
                     token_lots,
                     config.slippage_bps
                 )
-                if not sell_quote:
-                    logger.warning(f"No sell quote for {mint} at current price {current_price}")
-                    risk.positions.pop(mint, None)
-                    continue
 
-                # ========== DRY_RUN / REAL SPLIT ==========
-                if config.dry_run:
-                    sig = f"DRY_RUN_SELL_{mint[:8]}"
-                    pnl = pos.get("unrealized_pnl", 0.0)
-                    await log_trade(mint, "DRY SELL", 0.0, pnl, sig, "auto_exit (fake)")
-                    risk.record(mint, pos["size_sol"], True, pnl)
-                else:
+                if sell_quote:
                     sig = await self.jupiter.execute_swap(sell_quote)
                     pnl = pos.get("unrealized_pnl", 0.0)
                     if sig:
                         await log_trade(mint, "SELL", 0.0, pnl, sig, "auto_exit")
                     risk.record(mint, pos["size_sol"], True, pnl)
-                # ==========================================
+                else:
+                    logger.warning(f"No sell quote for {mint} at current price {current_price}")
 
                 risk.positions.pop(mint, None)
 
