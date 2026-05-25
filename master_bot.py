@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-MASTER SOLANA BOT v6.2 — Pump.fun Sniper + Portfolio Manager (with 1 SOL + 0.5 SOL configs)
+MASTER SOLANA BOT v6.3 — Pump.fun Sniper + Portfolio Manager (with DRY_RUN safety mode)
+
+DRY_RUN=true in .env → Full strategy runs (scoring, risk, dashboard, CSV logging)
+                    but NO real transactions are sent. Perfect for testing logic safely.
 """
 
 import os
@@ -10,6 +13,7 @@ import csv
 import base64
 import time
 import logging
+import random
 from datetime import datetime, date
 from typing import Dict, Optional
 from dataclasses import dataclass, field
@@ -87,7 +91,16 @@ class ConfigMini:
 CONFIG_MODE = os.getenv("CONFIG_MODE", "MAIN")  # "MAIN" or "MINI"
 config = ConfigMain() if CONFIG_MODE == "MAIN" else ConfigMini()
 
-# ===================== (REST OF YOUR CORE LAYERS) =====================
+# ===================== DRY RUN SAFETY (re-implemented cleanly) =====================
+DRY_RUN = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
+if DRY_RUN:
+    logger.warning("\n" + "="*60)
+    logger.warning("DRY_RUN MODE ACTIVE — No real transactions will be broadcast.")
+    logger.warning("Full strategy, risk engine, scoring, dashboard and CSV logging still run.")
+    logger.warning("Set DRY_RUN=false (or remove) to go live. Default is SAFE (live).")
+    logger.warning("="*60 + "\n")
+else:
+    logger.info("LIVE MODE — Real capital at risk. DRY_RUN=true for safe testing.")
 
 keypair = Keypair.from_base58_string(config.private_key) if config.private_key else None
 
@@ -98,15 +111,17 @@ if not os.path.exists(TRADE_CSV):
 
 
 async def log_trade(mint: str, action: str, sol: float, pnl: float, sig: str, reason: str):
+    prefix = "[DRY] " if DRY_RUN else ""
     with open(TRADE_CSV, "a", newline="") as f:
-        csv.writer(f).writerow([datetime.utcnow().isoformat(), mint, action, sol, pnl, sig, reason])
+        csv.writer(f).writerow([datetime.utcnow().isoformat(), mint, prefix + action, sol, pnl, sig, reason])
 
 
 async def alert(msg: str):
     if config.telegram_token and config.telegram_chat:
+        prefix = "[DRY-RUN] " if DRY_RUN else ""
         url = f"https://api.telegram.org/bot{config.telegram_token}/sendMessage"
         async with aiohttp.ClientSession() as s:
-            await s.post(url, json={"chat_id": config.telegram_chat, "text": msg})
+            await s.post(url, json={"chat_id": config.telegram_chat, "text": prefix + msg})
 
 
 # ===================== RISK ENGINE =====================
@@ -166,6 +181,18 @@ class Jupiter:
             return await r.json()
 
     async def execute_swap(self, quote_resp: dict) -> Optional[str]:
+        if DRY_RUN:
+            logger.info("[DRY-RUN] Simulating Jupiter swap execution (no on-chain tx sent)")
+            # Realistic simulation: 90% success to exercise full downstream logic (position mgmt, risk, alerts)
+            if random.random() < 0.90:
+                fake_sig = f"DRY_{int(time.time() * 1000)}_{random.randint(10000, 99999)}"
+                logger.info(f"[DRY-RUN] Simulated SUCCESS → fake sig: {fake_sig}")
+                return fake_sig
+            else:
+                logger.warning("[DRY-RUN] Simulated FAILURE (edge case testing)")
+                return None
+
+        # ===================== REAL ON-CHAIN EXECUTION =====================
         payload = {
             "quoteResponse": quote_resp,
             "userPublicKey": str(keypair.pubkey()),
@@ -391,6 +418,7 @@ class MasterBot:
         layout = Layout()
         layout.split_row(Layout(name="sniper"), Layout(name="portfolio"))
 
+        mode_banner = "[DRY-RUN SIMULATION]" if DRY_RUN else "[LIVE CAPITAL]"
         with Live(layout, refresh_per_second=3) as live:
             while True:
                 try:
@@ -406,7 +434,7 @@ class MasterBot:
 
                     await self.manage_positions()
 
-                    s_table = Table(title="SNIPER")
+                    s_table = Table(title=f"SNIPER {mode_banner}")
                     for m in list(risk.positions.keys())[-5:]:
                         s_table.add_row(m[:8])
 
