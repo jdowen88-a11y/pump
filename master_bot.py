@@ -1,13 +1,14 @@
 # =====================================================================
 # master_bot.py — Elite pump.fun Simulation + Live Trading Engine
 # =====================================================================
-# REALISM_MODE    = "soft"  → friendly sim
-# REALISM_MODE    = "full"  → true hell mode (MEV, sub-second, rugs, RPC)
-# KEEP_SEED_ONLY  = True    → withdraw all profit above seed after each win
-#                             active wallet resets to SEED_USD every time
-# HARSH_MODE      = True    → applies 10% harder conditions to soft mode
-# DRY_RUN         = True    → simulation only
-# DRY_RUN         = False   → live trading (wire up live_* stubs below)
+# REALISM_MODE = "soft"       → clean sim, zero friction (strategy testing)
+# REALISM_MODE = "realistic"  → real-world friction: gas, MEV, RPC fails,
+#                                partial fills, latency, dev dumps, rugs
+# REALISM_MODE = "full"       → original hell mode (sub-second, 80-300 tokens)
+# KEEP_SEED_ONLY = True       → sweep all profit above seed after every win
+# HARSH_MODE    = True        → +10% harder soft mode conditions
+# DRY_RUN       = True        → simulation only
+# DRY_RUN       = False       → live trading (wire up live_* stubs below)
 # =====================================================================
 
 import random
@@ -26,10 +27,10 @@ log = logging.getLogger("master_bot")
 # TOP-LEVEL SWITCHES
 # =====================================================================
 
-DRY_RUN        = True    # True = sim | False = live
-REALISM_MODE   = "soft"  # "soft" | "full"
-KEEP_SEED_ONLY = True    # True = sweep all profit above seed each win
-HARSH_MODE     = False   # True = 10% harder soft mode conditions
+DRY_RUN        = True          # True = sim | False = live
+REALISM_MODE   = "realistic"   # "soft" | "realistic" | "full"
+KEEP_SEED_ONLY = True          # sweep all profit above seed after every win
+HARSH_MODE     = False         # +10% harder soft mode
 
 # =====================================================================
 # CONFIG
@@ -38,12 +39,13 @@ HARSH_MODE     = False   # True = 10% harder soft mode conditions
 SEED_USD        = 100.0
 TARGET_USD      = 500.0
 BET_USD         = 17.50
-ROUNDS          = 100
+ROUNDS          = 500
 SOL_PRICE_USD   = 175.0
 BUY_SOL         = BET_USD / SOL_PRICE_USD
 SIM_RANDOM_SEED = 42
 
-ENTRY_SCORE_MIN    = 55
+# Research engine thresholds
+ENTRY_SCORE_MIN    = 65        # raised for realistic/full modes
 MAX_DEV_WALLET_LOW = 3.0
 MAX_DEV_WALLET_MED = 8.0
 MAX_SNIPER_LOW     = 2
@@ -51,6 +53,7 @@ MAX_SNIPER_MED     = 5
 GRAD_PCT_EARLY     = 15.0
 GRAD_PCT_MID       = 35.0
 
+# Exit targets
 QUICK_FLIP_TARGET  = 1.10
 STRONG_RIDE_TARGET = 1.25
 VIRAL_RIDE_TARGET  = 1.40
@@ -59,18 +62,19 @@ VIRAL_TRAIL_PCT    = 0.90
 BASE_TRAIL_PCT     = 0.92
 LOSS_CUT_PCT       = 0.88
 
+# Moonshot engine
 MOONSHOT_TRAIL_PCT   = 0.94
 MOONSHOT_HARDCAP     = 8.0
 MOONSHOT_LOWER_HIGHS = 2
 MOONSHOT_VOL_FADE    = 0.85
 
-# ── SOFT MODE settings ──────────────────────────────────────────────
+# ── SOFT MODE ─────────────────────────────────────────────────────────
 SOFT_TOKENS_PER_ROUND   = (4, 10)
 SOFT_TICK_SIZE_SEC      = 5.0
 SOFT_TICKS              = 24
 SOFT_SLIPPAGE_FAIL_RATE = 0.07
 
-# ── HARSH SOFT MODE (+10% difficulty) ───────────────────────────────
+# ── HARSH SOFT MODE (+10%) ──────────────────────────────────────────────
 HARSH_MULT              = 1.10
 HARSH_SLIPPAGE_FAIL     = round(SOFT_SLIPPAGE_FAIL_RATE * HARSH_MULT, 3)
 HARSH_SNIPER_DRAG_MULT  = HARSH_MULT
@@ -78,7 +82,27 @@ HARSH_PRICE_NOISE_MULT  = HARSH_MULT
 HARSH_DEV_DUMP_MULT     = HARSH_MULT
 HARSH_HYPE_WEIGHT       = round(1.5 / HARSH_MULT, 4)
 
-# ── FULL REALISM settings ────────────────────────────────────────────
+# ── REALISTIC MODE (real-world friction) ──────────────────────────────
+REAL_TOKENS_PER_ROUND   = (6, 14)
+REAL_TICKS              = 24
+REAL_TICK_SEC           = 5.0
+REAL_RPC_FAIL_RATE      = 0.10   # 10% txns fail outright
+REAL_MEV_RATE           = 0.20   # 20% buys sandwiched
+REAL_MEV_SLIPPAGE       = 0.08   # +8% slippage on sandwich
+REAL_BASE_SLIPPAGE      = 0.025  # 2.5% base always
+REAL_PARTIAL_FILL_RATE  = 0.06   # 6% buys partially fill
+REAL_PARTIAL_FILL_PCT   = 0.55   # partial = 55% of intended
+REAL_GAS_FEE_SOL        = 0.003  # 0.003 SOL per tx (~$0.525)
+REAL_LATENCY_MISS_RATE  = 0.15   # 15% miss early entry due to delay
+REAL_LATENCY_PENALTY    = 0.12   # 12% worse curve position on miss
+REAL_RUG_RATE           = 0.22   # 22% of tokens rug mid-hold
+REAL_RUG_RECOVERY       = (0.04, 0.14)
+REAL_DEV_DUMP_RATE      = 0.18   # 18% chance dev dumps while holding
+REAL_DEV_DUMP_HIT       = (0.25, 0.55)
+REAL_TOKEN_DIST         = ["weak","weak","weak","moderate","moderate","moderate","strong","viral"]
+REAL_SPIKE_DECAY        = {"weak":0.97,"moderate":0.95,"strong":0.92,"viral":0.88}
+
+# ── FULL REALISM (original hell mode) ─────────────────────────────────
 FULL_TOKENS_PER_ROUND   = (80, 300)
 FULL_TICK_SIZE_SEC      = 0.5
 FULL_TICKS              = 240
@@ -94,7 +118,7 @@ MID_HOLD_RUG_RATE       = 0.18
 MID_HOLD_RUG_WINDOW     = (5, 40)
 SPIKE_DECAY = {"weak": 0.97, "moderate": 0.95, "strong": 0.92, "viral": 0.88}
 
-# ── Withdrawal log file ─────────────────────────────────────────────
+# ── Withdrawal log ─────────────────────────────────────────────────────────
 WITHDRAWAL_LOG_FILE = "withdrawal_log.csv"
 
 # =====================================================================
@@ -162,6 +186,18 @@ def generate_token_soft(index: int) -> TokenProfile:
         buy_pressure=random.choice(["weak","weak","moderate","moderate","strong","viral"]),
         narrative=random.choice(["AI","meme","animal","political","random"]),
         launch_wave="first_30s"
+    )
+
+
+def generate_token_realistic(index: int) -> TokenProfile:
+    return TokenProfile(
+        name=f"TKN_{index}",
+        hype_score=round(random.uniform(0.05, 1.0), 2),
+        dev_wallet_pct=round(random.uniform(0.5, 30.0), 1),
+        sniper_count=random.randint(0, 15),
+        buy_pressure=random.choice(REAL_TOKEN_DIST),
+        narrative=random.choice(["AI","meme","animal","political","random","random"]),
+        launch_wave=random.choice(["first_30s","first_30s","1min","1min","late"])
     )
 
 
@@ -233,10 +269,10 @@ def research_score(token: TokenProfile, curve: BondingCurve) -> Tuple[float, dic
 # =====================================================================
 
 def simulate_price_soft(token: TokenProfile) -> Tuple[list, float, list]:
-    hype_w       = HARSH_HYPE_WEIGHT if HARSH_MODE else 1.5
-    sniper_mult  = HARSH_SNIPER_DRAG_MULT if HARSH_MODE else 1.0
-    noise_mult   = HARSH_PRICE_NOISE_MULT if HARSH_MODE else 1.0
-    dev_mult     = HARSH_DEV_DUMP_MULT if HARSH_MODE else 1.0
+    hype_w      = HARSH_HYPE_WEIGHT if HARSH_MODE else 1.5
+    sniper_mult = HARSH_SNIPER_DRAG_MULT if HARSH_MODE else 1.0
+    noise_mult  = HARSH_PRICE_NOISE_MULT if HARSH_MODE else 1.0
+    dev_mult    = HARSH_DEV_DUMP_MULT if HARSH_MODE else 1.0
 
     pressure_mult = {"weak":0.3,"moderate":0.7,"strong":1.4,"viral":2.8}[token.buy_pressure]
     hype_mult     = token.hype_score * hype_w
@@ -255,10 +291,41 @@ def simulate_price_soft(token: TokenProfile) -> Tuple[list, float, list]:
             dev_dump = -random.uniform(0.2, 0.5) * dev_mult
         current = max(0.05, current + delta + sniper_sell + dev_dump)
         peak = max(peak, current)
-        vol_delta = random.gauss(base_momentum * 0.1, 0.08 * noise_mult)
-        prev_vol = max(0.1, prev_vol + vol_delta)
-        path.append((t, round(current, 4)))
-        volumes.append(round(prev_vol, 4))
+        prev_vol = max(0.1, prev_vol + random.gauss(base_momentum * 0.1, 0.08 * noise_mult))
+        path.append((t, round(current, 4))); volumes.append(round(prev_vol, 4))
+
+    return path, peak, volumes
+
+
+def simulate_price_realistic(token: TokenProfile, curve_penalty: float = 0.0) -> Tuple[list, float, list]:
+    """Soft-tick sim with real-world price dynamics: rug rate, dev dumps, sniper drag, decay."""
+    p    = {"weak":0.25,"moderate":0.6,"strong":1.3,"viral":2.6}[token.buy_pressure]
+    h    = token.hype_score * 1.3
+    drag = min(0.7, token.sniper_count * 0.055)
+    mom  = max(0.0, (p + h) / 2 - drag - curve_penalty)
+
+    current = 1.0; peak = 1.0
+    path = [(0.0, 1.0)]; volumes = [1.0]; pv = 1.0
+    rug_tick = None
+    if random.random() < REAL_RUG_RATE:
+        rug_tick = random.randint(3, 18)
+
+    for tick in range(1, REAL_TICKS + 1):
+        t = tick * REAL_TICK_SEC
+        mom *= REAL_SPIKE_DECAY[token.buy_pressure]
+        delta = random.gauss(mom * 0.07, 0.07)
+        sniper_sell = -drag * 0.13 if t <= 20 else 0.0
+        dev_dump = 0.0
+        if current > 1.3 and random.random() < REAL_DEV_DUMP_RATE:
+            dev_dump = -random.uniform(*REAL_DEV_DUMP_HIT)
+        if rug_tick and tick >= rug_tick:
+            current = max(0.03, current * random.uniform(*REAL_RUG_RECOVERY))
+            peak = max(peak, current)
+            path.append((t, round(current, 4))); volumes.append(0.04); break
+        current = max(0.04, current + delta + sniper_sell + dev_dump)
+        peak = max(peak, current)
+        pv = max(0.1, pv + random.gauss(mom * 0.09, 0.07))
+        path.append((t, round(current, 4))); volumes.append(round(pv, 4))
 
     return path, peak, volumes
 
@@ -269,33 +336,24 @@ def simulate_price_full(token: TokenProfile) -> Tuple[list, float, list]:
     sniper_drag  = min(0.8, token.sniper_count * 0.04)
     dev_dump_risk= token.dev_wallet_pct / 100.0
     decay        = SPIKE_DECAY[token.buy_pressure]
-
     current = 1.0; peak = 1.0
     path = [(0.0, 1.0)]; volumes = [1.0]; prev_vol = 1.0
     momentum = (pressure + hype) / 2 - sniper_drag
     rug_tick = None
     if random.random() < MID_HOLD_RUG_RATE:
-        rug_sec  = random.uniform(*MID_HOLD_RUG_WINDOW)
-        rug_tick = int(rug_sec / FULL_TICK_SIZE_SEC)
-
+        rug_tick = int(random.uniform(*MID_HOLD_RUG_WINDOW) / FULL_TICK_SIZE_SEC)
     for tick in range(1, FULL_TICKS + 1):
-        t = round(tick * FULL_TICK_SIZE_SEC, 1)
-        momentum *= decay
-        delta      = random.gauss(momentum * 0.04, 0.04)
-        sniper_sell= (-sniper_drag * 0.12 if t <= 20 else
-                      -sniper_drag * 0.04 if t <= 40 else 0.0)
-        dev_dump   = 0.0
-        if current > 1.3 and random.random() < dev_dump_risk * 0.8:
-            dev_dump = -random.uniform(0.15, 0.45)
+        t = round(tick * FULL_TICK_SIZE_SEC, 1); momentum *= decay
+        delta = random.gauss(momentum * 0.04, 0.04)
+        sniper_sell = (-sniper_drag * 0.12 if t <= 20 else -sniper_drag * 0.04 if t <= 40 else 0.0)
+        dev_dump = (-random.uniform(0.15, 0.45) if current > 1.3 and random.random() < dev_dump_risk * 0.8 else 0.0)
         if rug_tick and tick >= rug_tick:
             current = max(0.03, current * random.uniform(0.04, 0.12))
-            peak    = max(peak, current)
-            path.append((t, round(current, 4))); volumes.append(0.05); break
-        current  = max(0.03, current + delta + sniper_sell + dev_dump)
-        peak     = max(peak, current)
+            peak = max(peak, current); path.append((t, round(current, 4))); volumes.append(0.05); break
+        current = max(0.03, current + delta + sniper_sell + dev_dump)
+        peak = max(peak, current)
         prev_vol = max(0.05, prev_vol + random.gauss(momentum * 0.08, 0.06))
         path.append((t, round(current, 4))); volumes.append(round(prev_vol, 4))
-
     return path, peak, volumes
 
 
@@ -306,21 +364,17 @@ def simulate_price_full(token: TokenProfile) -> Tuple[list, float, list]:
 def compute_exit(price_path: list, volume_path: list, token: TokenProfile, score: float) -> Tuple[float, str, float]:
     is_viral  = token.buy_pressure == "viral"  and score >= 70
     is_strong = token.buy_pressure == "strong" and score >= 65
-
     base_target = VIRAL_RIDE_TARGET if is_viral else (STRONG_RIDE_TARGET if is_strong else QUICK_FLIP_TARGET)
     base_trail  = VIRAL_TRAIL_PCT   if is_viral else (STRONG_TRAIL_PCT   if is_strong else BASE_TRAIL_PCT)
-
     peak = 1.0; moonshot_mode = False; prev_high = 1.0; lower_highs = 0
 
     for i, (t, mult) in enumerate(price_path[1:], 1):
         vol      = volume_path[i] if i < len(volume_path) else volume_path[-1]
         prev_vol = volume_path[i-1] if i > 0 else 1.0
         peak = max(peak, mult)
-
         if not moonshot_mode and mult >= base_target and (is_viral or is_strong):
             if vol > prev_vol and mult >= prev_high * 0.99:
                 moonshot_mode = True; prev_high = mult; continue
-
         if moonshot_mode:
             if mult > prev_high: lower_highs = 0; prev_high = mult
             else: lower_highs += 1
@@ -330,11 +384,9 @@ def compute_exit(price_path: list, volume_path: list, token: TokenProfile, score
             if mult < peak * MOONSHOT_TRAIL_PCT:
                 return mult, f"MOONSHOT_TRAIL_{int((mult-1)*100)}pct", t
             prev_high = max(prev_high, mult); continue
-
         if mult >= base_target:
             label = (f"VIRAL_RIDE_{int((mult-1)*100)}pct" if is_viral else
-                     f"STRONG_RIDE_{int((mult-1)*100)}pct" if is_strong else
-                     "QUICK_FLIP_10pct")
+                     f"STRONG_RIDE_{int((mult-1)*100)}pct" if is_strong else "QUICK_FLIP_10pct")
             return mult, label, t
         if peak > 1.05 and mult < peak * base_trail: return mult, "TRAIL_STOP", t
         if mult < LOSS_CUT_PCT: return mult, "LOSS_CUT", t
@@ -345,18 +397,18 @@ def compute_exit(price_path: list, volume_path: list, token: TokenProfile, score
 
 
 # =====================================================================
-# EXECUTION LAYER — full realism overhead
+# EXECUTION OVERHEAD — full realism
 # =====================================================================
 
 def apply_execution_overhead() -> Tuple[bool, bool, float, float, bool]:
     if random.random() < RPC_FAILURE_RATE:
         return True, False, 0.0, 0.0, False
-    mev_hit   = random.random() < MEV_SANDWICH_RATE
-    mev_slip  = MEV_SANDWICH_SLIPPAGE if mev_hit else 0.0
-    congestion= random.random() < CONGESTION_DELAY_CHANCE
-    cong_slip = CONGESTION_PRICE_MISS if congestion else 0.0
-    actual_sol= BUY_SOL * (PARTIAL_FILL_PCT if random.random() < PARTIAL_FILL_RATE else 1.0)
-    total_slip= BASE_SLIPPAGE + mev_slip + cong_slip
+    mev_hit    = random.random() < MEV_SANDWICH_RATE
+    mev_slip   = MEV_SANDWICH_SLIPPAGE if mev_hit else 0.0
+    congestion = random.random() < CONGESTION_DELAY_CHANCE
+    cong_slip  = CONGESTION_PRICE_MISS if congestion else 0.0
+    actual_sol = BUY_SOL * (PARTIAL_FILL_PCT if random.random() < PARTIAL_FILL_RATE else 1.0)
+    total_slip = BASE_SLIPPAGE + mev_slip + cong_slip
     return False, mev_hit, actual_sol, total_slip, congestion
 
 
@@ -365,27 +417,20 @@ def apply_execution_overhead() -> Tuple[bool, bool, float, float, bool]:
 # =====================================================================
 
 def init_withdrawal_log():
-    """Create/reset withdrawal_log.csv with headers."""
     with open(WITHDRAWAL_LOG_FILE, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "timestamp", "round", "token", "exit_reason",
-            "trade_pnl_usd", "amount_withdrawn_usd",
-            "active_wallet_after", "cumulative_withdrawn_usd", "reset_count"
+        csv.writer(f).writerow([
+            "timestamp","round","token","exit_reason",
+            "trade_pnl_usd","amount_withdrawn_usd",
+            "active_wallet_after","cumulative_withdrawn_usd","reset_count"
         ])
     log.info(f"  📒 Withdrawal log initialised → {WITHDRAWAL_LOG_FILE}")
 
 
-def log_withdrawal(
-    round_num: int, token_name: str, exit_reason: str,
-    trade_pnl: float, amount_withdrawn: float,
-    active_after: float, cumulative: float, reset_count: int
-):
-    """Append one withdrawal event to the CSV log."""
+def log_withdrawal(round_num, token_name, exit_reason, trade_pnl,
+                   amount_withdrawn, active_after, cumulative, reset_count):
     with open(WITHDRAWAL_LOG_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        csv.writer(f).writerow([
+            datetime.now(datetime.timezone.utc if hasattr(datetime, 'timezone') else None).strftime("%Y-%m-%d %H:%M:%S"),
             round_num, token_name, exit_reason,
             round(trade_pnl, 2), round(amount_withdrawn, 2),
             round(active_after, 2), round(cumulative, 2), reset_count
@@ -397,36 +442,19 @@ def log_withdrawal(
 # =====================================================================
 
 def live_fetch_token(address: str) -> Optional[TokenProfile]:
-    """
-    TODO: Pull real token data from pump.fun API / on-chain.
-    Recommended sources: Birdeye API, Helius RPC, pump.fun websocket.
-    """
+    """TODO: Birdeye API / Helius RPC / pump.fun websocket."""
     raise NotImplementedError("Live token fetch not yet implemented")
 
-
 def live_buy(token_address: str, sol_amount: float) -> Optional[float]:
-    """
-    TODO: Execute buy on pump.fun bonding curve via Solana web3.
-    Use Jito bundles for MEV protection in live mode.
-    Returns tokens received, or None on failure.
-    """
+    """TODO: Solana web3 + Jito bundles for MEV protection."""
     raise NotImplementedError("Live buy not yet implemented")
 
-
 def live_sell(token_address: str, token_amount: float) -> Optional[float]:
-    """
-    TODO: Execute sell on pump.fun bonding curve via Solana web3.
-    Returns SOL received, or None on failure.
-    """
+    """TODO: Solana web3 sell on pump.fun curve."""
     raise NotImplementedError("Live sell not yet implemented")
 
-
 def live_get_price_tick(token_address: str) -> Tuple[float, float]:
-    """
-    TODO: Pull current price multiplier + volume from on-chain / websocket.
-    Use pump.fun websocket or Helius enhanced transactions for sub-second data.
-    Returns (price_multiplier_vs_entry, current_volume).
-    """
+    """TODO: pump.fun websocket or Helius enhanced transactions."""
     raise NotImplementedError("Live price tick not yet implemented")
 
 
@@ -437,72 +465,108 @@ def live_get_price_tick(token_address: str) -> Tuple[float, float]:
 def run_bot():
     random.seed(SIM_RANDOM_SEED)
 
+    is_realistic = (REALISM_MODE == "realistic")
+    is_full      = (REALISM_MODE == "full")
     slip_rate    = HARSH_SLIPPAGE_FAIL if (REALISM_MODE == "soft" and HARSH_MODE) else SOFT_SLIPPAGE_FAIL_RATE
-    mode_label   = f"DRY RUN [{REALISM_MODE.upper()}{' +HARSH' if HARSH_MODE else ''}]" if DRY_RUN else "⚡ LIVE MODE"
+    mode_label   = (f"DRY RUN [{REALISM_MODE.upper()}{' +HARSH' if HARSH_MODE else ''}]"
+                    if DRY_RUN else "⚡ LIVE MODE")
 
     log.info("=" * 70)
     log.info(f"  {mode_label} | SEED: ${SEED_USD:.2f} | BET: ${BET_USD:.2f} | TARGET: ${TARGET_USD:.2f}")
-    log.info(f"  🌙 Moonshot engine ACTIVE | Momentum rider ACTIVE")
-    log.info(f"  💰 KEEP_SEED_ONLY: {KEEP_SEED_ONLY} | Profit swept to wallet after every win")
-    if REALISM_MODE == "full":
+    log.info(f"  🌙 Moonshot engine ACTIVE | 💰 KEEP_SEED_ONLY: {KEEP_SEED_ONLY}")
+    if is_realistic:
+        log.info(f"  ✅ Gas fees | ✅ MEV sandwiching | ✅ RPC failures | ✅ Partial fills")
+        log.info(f"  ✅ Latency misses | ✅ Mid-hold rugs | ✅ Dev dumps | ✅ Spike decay")
+    elif is_full:
         log.info(f"  ✅ MEV | ✅ RPC fails | ✅ Sub-second | ✅ Mid-hold rugs | ✅ 80-300 tokens")
     log.info("=" * 70)
 
     if KEEP_SEED_ONLY:
         init_withdrawal_log()
 
-    balance_usd  = SEED_USD
-    withdrawn    = 0.0
-    reset_count  = 0
+    balance_usd = SEED_USD
+    withdrawn   = 0.0; reset_count = 0; total_gas = 0.0
     trades: List[dict] = []
     wins = losses = skipped = seen = moonshots = rpc_fails = mev_hits = rugs = 0
-    token_counter = 0
+    latency_misses = partial_fills = token_counter = 0
 
     for r in range(1, ROUNDS + 1):
-        tokens_this_round = (random.randint(*FULL_TOKENS_PER_ROUND) if REALISM_MODE == "full"
-                             else random.randint(*SOFT_TOKENS_PER_ROUND))
+        if is_full:       tpr = random.randint(*FULL_TOKENS_PER_ROUND)
+        elif is_realistic: tpr = random.randint(*REAL_TOKENS_PER_ROUND)
+        else:              tpr = random.randint(*SOFT_TOKENS_PER_ROUND)
+
         round_pnl = 0.0; round_trades = 0
 
-        for _ in range(tokens_this_round):
+        for _ in range(tpr):
             token_counter += 1; seen += 1
 
             if DRY_RUN:
-                token = (generate_token_full(token_counter) if REALISM_MODE == "full"
-                         else generate_token_soft(token_counter))
+                if is_full:        token = generate_token_full(token_counter)
+                elif is_realistic: token = generate_token_realistic(token_counter)
+                else:              token = generate_token_soft(token_counter)
                 curve = BondingCurve()
-                for _ in range(random.randint(0, 15 if REALISM_MODE == "full" else 8)):
-                    curve.buy(random.uniform(0.02 if REALISM_MODE == "full" else 0.05, 0.5))
+                for _ in range(random.randint(0, 12 if is_realistic else 15 if is_full else 8)):
+                    curve.buy(random.uniform(0.02, 0.45))
             else:
                 token = live_fetch_token("LIVE_TOKEN_ADDRESS")
                 curve = BondingCurve()
             if token is None: continue
 
             score, signals = research_score(token, curve)
-            if score < ENTRY_SCORE_MIN:
-                skipped += 1; continue
+            if score < ENTRY_SCORE_MIN: skipped += 1; continue
 
             if balance_usd < BET_USD:
-                log.warning(f"  💀 BUSTED — balance ${balance_usd:.2f} < bet ${BET_USD:.2f}")
-                _print_summary(r, seen, skipped, wins, losses, moonshots, rpc_fails, mev_hits, rugs, balance_usd, withdrawn, reset_count, trades)
+                log.warning(f"  💀 BUSTED — ${balance_usd:.2f} < bet ${BET_USD:.2f}")
+                _print_summary(r, seen, skipped, wins, losses, moonshots, rpc_fails, mev_hits,
+                               rugs, balance_usd, withdrawn, reset_count, total_gas, trades)
                 return
 
-            effective_buy_usd = BET_USD; mev_tag = ""
-            if DRY_RUN and REALISM_MODE == "full":
+            effective_buy_usd = BET_USD; mev_tag = ""; curve_penalty = 0.0
+
+            # ── REALISTIC execution overhead ─────────────────────────────────
+            if DRY_RUN and is_realistic:
+                gas = REAL_GAS_FEE_SOL * SOL_PRICE_USD
+                balance_usd -= gas; total_gas += gas
+                if balance_usd < 0: balance_usd = 0; break
+
+                if random.random() < REAL_RPC_FAIL_RATE:
+                    rpc_fails += 1; continue   # gas already paid, no trade
+
+                if random.random() < REAL_LATENCY_MISS_RATE:
+                    latency_misses += 1; curve_penalty = REAL_LATENCY_PENALTY
+
+                mev = random.random() < REAL_MEV_RATE
+                if mev: mev_hits += 1; mev_tag = " [MEV]"
+
+                fill = REAL_PARTIAL_FILL_PCT if random.random() < REAL_PARTIAL_FILL_RATE else 1.0
+                if fill < 1.0: partial_fills += 1
+
+                slip = REAL_BASE_SLIPPAGE + (REAL_MEV_SLIPPAGE if mev else 0.0)
+                effective_buy_usd = BET_USD * fill * (1.0 - slip)
+                curve.buy(BUY_SOL * fill)
+
+            # ── FULL MODE execution overhead ──────────────────────────────────
+            elif DRY_RUN and is_full:
                 rpc_failed, mev_hit, actual_sol, total_slip, _ = apply_execution_overhead()
                 if rpc_failed: rpc_fails += 1; continue
                 if mev_hit:    mev_hits += 1; mev_tag = " [MEV]"
                 effective_buy_usd = actual_sol * SOL_PRICE_USD * (1.0 - total_slip)
                 curve.buy(actual_sol)
+
+            # ── SOFT MODE execution ────────────────────────────────────────────
             elif DRY_RUN:
                 if random.random() < slip_rate: continue
                 curve.buy(BUY_SOL)
-            else:
+
+            else:  # live
                 tokens_received = live_buy(token.name, BUY_SOL)
                 if tokens_received is None: continue
 
+            # ── Price action ─────────────────────────────────────────────────
             if DRY_RUN:
-                price_path, peak_mult, volume_path = (simulate_price_full(token) if REALISM_MODE == "full"
-                                                      else simulate_price_soft(token))
+                if is_full:        price_path, _, volume_path = simulate_price_full(token)
+                elif is_realistic: price_path, _, volume_path = simulate_price_realistic(token, curve_penalty)
+                else:              price_path, _, volume_path = simulate_price_soft(token)
                 exit_mult, exit_reason, exit_time = compute_exit(price_path, volume_path, token, score)
             else:
                 price_path = [(0, 1.0)]; volume_path = [1.0]
@@ -511,7 +575,7 @@ def run_bot():
                     price_path.append((tick * 5, mult)); volume_path.append(vol)
                     exit_mult, exit_reason, exit_time = compute_exit(price_path, volume_path, token, score)
                     if exit_reason != "TIME_EXIT": break
-                    time.sleep(0.5 if REALISM_MODE == "full" else 5)
+                    time.sleep(0.5 if is_full else 5)
                 sol_returned = live_sell(token.name, BUY_SOL / curve.price())
                 if sol_returned is None: continue
                 exit_mult = sol_returned / BUY_SOL
@@ -524,28 +588,20 @@ def run_bot():
             else:           losses += 1
             if "MOONSHOT" in exit_reason: moonshots += 1
 
-            # ── WITHDRAWAL — sweep profit above seed ─────────────────
+            # ── WITHDRAWAL SWEEP ───────────────────────────────────────────
             if KEEP_SEED_ONLY and balance_usd > SEED_USD:
-                amount_swept  = round(balance_usd - SEED_USD, 2)
-                withdrawn    += amount_swept
-                balance_usd   = SEED_USD
-                reset_count  += 1
-                if DRY_RUN:  # always log in sim; in live replace with real wallet tx
-                    log_withdrawal(
-                        round_num=r, token_name=token.name,
-                        exit_reason=exit_reason, trade_pnl=pnl_usd,
-                        amount_withdrawn=amount_swept,
-                        active_after=balance_usd,
-                        cumulative=withdrawn,
-                        reset_count=reset_count
-                    )
+                swept        = round(balance_usd - SEED_USD, 2)
+                withdrawn   += swept
+                balance_usd  = SEED_USD
+                reset_count += 1
+                log_withdrawal(r, token.name, exit_reason, pnl_usd, swept,
+                               balance_usd, withdrawn, reset_count)
                 log.info(
-                    f"  💰 WITHDRAWAL #{reset_count:03d} | +${amount_swept:.2f} swept → wallet | "
-                    f"cumulative: ${withdrawn:.2f} | active reset to ${balance_usd:.2f}"
+                    f"  💰 WITHDRAWAL #{reset_count:03d} | +${swept:.2f} swept → wallet | "
+                    f"cumulative: ${withdrawn:.2f} | active reset → ${balance_usd:.2f}"
                 )
 
             round_trades += 1; round_pnl += pnl_usd
-
             flag = ("🌙" if "MOONSHOT" in exit_reason else "🚀" if "VIRAL" in exit_reason else
                     "🏄" if "STRONG"   in exit_reason else "✅" if pnl_usd > 0 else "❌")
 
@@ -559,25 +615,28 @@ def run_bot():
 
             log.info(
                 f"  {flag}  {token.name:<8} | sc{score:>3.0f} | {token.buy_pressure:<8} | "
-                f"{exit_reason:<30} | {exit_time:>5.1f}s{mev_tag:<6} | "
-                f"${pnl_usd:>+7.2f} | active ${balance_usd:.2f} | 💰withdrawn ${withdrawn:.2f}"
+                f"{exit_reason:<32} | {exit_time:>5.1f}s{mev_tag:<6} | "
+                f"${pnl_usd:>+7.2f} | active ${balance_usd:.2f} | 💰${withdrawn:.2f}"
             )
 
             if balance_usd >= TARGET_USD:
                 log.info(f"\n  🎯 TARGET HIT — ${balance_usd:.2f}")
-                _print_summary(r, seen, skipped, wins, losses, moonshots, rpc_fails, mev_hits, rugs, balance_usd, withdrawn, reset_count, trades)
+                _print_summary(r, seen, skipped, wins, losses, moonshots, rpc_fails, mev_hits,
+                               rugs, balance_usd, withdrawn, reset_count, total_gas, trades)
                 return
 
         icon = "📈" if round_pnl >= 0 else "📉"
         log.info(
-            f"Round {r:02d} {icon} | Seen: {tokens_this_round} | Traded: {round_trades} | "
-            f"PnL: ${round_pnl:+.2f} | Active: ${balance_usd:.2f} | 💰 Withdrawn: ${withdrawn:.2f}\n"
+            f"Round {r:02d} {icon} | Seen: {tpr} | Traded: {round_trades} | "
+            f"PnL: ${round_pnl:+.2f} | Active: ${balance_usd:.2f} | 💰Withdrawn: ${withdrawn:.2f}\n"
         )
 
-    _print_summary(ROUNDS, seen, skipped, wins, losses, moonshots, rpc_fails, mev_hits, rugs, balance_usd, withdrawn, reset_count, trades)
+    _print_summary(ROUNDS, seen, skipped, wins, losses, moonshots, rpc_fails, mev_hits,
+                   rugs, balance_usd, withdrawn, reset_count, total_gas, trades)
 
 
-def _print_summary(rounds, seen, skipped, wins, losses, moonshots, rpc_fails, mev_hits, rugs, balance_usd, withdrawn, resets, trades):
+def _print_summary(rounds, seen, skipped, wins, losses, moonshots, rpc_fails, mev_hits,
+                   rugs, balance_usd, withdrawn, resets, total_gas, trades):
     total = wins + losses
     wr    = (wins / total * 100) if total > 0 else 0
     log.info("\n" + "=" * 70)
@@ -586,16 +645,16 @@ def _print_summary(rounds, seen, skipped, wins, losses, moonshots, rpc_fails, me
     log.info(f"  Rounds      : {rounds} / {ROUNDS}")
     log.info(f"  Tokens seen : {seen:,} | Skipped: {skipped:,} | Traded: {total}")
     log.info(f"  W/L         : {wins}W / {losses}L | Win rate: {wr:.1f}%")
-    log.info(f"  🌙 Moonshots : {moonshots}")
-    log.info(f"  💀 Mid-rugs  : {rugs}")
-    log.info(f"  ⚡ RPC fails : {rpc_fails}")
-    log.info(f"  🥪 MEV hits  : {mev_hits}")
+    log.info(f"  🌙 Moonshots  : {moonshots}")
+    log.info(f"  💀 Mid-rugs   : {rugs}")
+    log.info(f"  ⚡ RPC fails  : {rpc_fails}")
+    log.info(f"  🥪 MEV hits   : {mev_hits}")
+    log.info(f"  ⚽ Gas paid    : ${total_gas:.2f}")
     log.info(f"  Active wallet  : ${balance_usd:.2f}")
     log.info(f"  💰 Withdrawn   : ${withdrawn:.2f}  ({resets} resets)")
     log.info(f"  Total value    : ${balance_usd + withdrawn:.2f}")
     log.info(f"  Net PnL        : ${(balance_usd + withdrawn) - SEED_USD:+.2f}")
-    if KEEP_SEED_ONLY:
-        log.info(f"  📒 Withdrawal log → {WITHDRAWAL_LOG_FILE}")
+    log.info(f"  📒 Withdrawal log → {WITHDRAWAL_LOG_FILE}")
     log.info("=" * 70)
 
 
