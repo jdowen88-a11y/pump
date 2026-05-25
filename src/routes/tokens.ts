@@ -1,99 +1,71 @@
 import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, desc, gte } from 'drizzle-orm';
+import { eq, gte, desc, and } from 'drizzle-orm';
 import { tokens } from '../db/schema';
-import { analyzeToken } from '../services/scorer';
+import { PUMPFUN_WS_URL, SCAM_THRESHOLD, PROFIT_SCORE_THRESHOLD } from '../utils/constants';
+import type { Env } from '../types';
 
-type Env = { DB: D1Database; KV: KVNamespace; SOLANA_RPC_URL: string; HELIUS_API_KEY: string };
+/**
+ * Token Routes
+ * GET /api/protected/tokens           - recent tokens, filterable by score
+ * GET /api/protected/tokens/:mint     - single token detail
+ * POST /api/protected/tokens/discover - trigger/status of live discovery feed
+ * GET /api/protected/tokens/hot       - top scoring, low scam tokens right now
+ */
 
-const tokenRoutes = new Hono<{ Bindings: Env }>();
+const tokensRouter = new Hono<{ Bindings: Env }>();
 
-tokenRoutes.get('/top-picks', async (c) => {
-const db = drizzle(c.env.DB);
+tokensRouter.get('/', async (c) => {
+  const orm = drizzle(c.env.DB);
+  const minScore = parseFloat(c.req.query('minScore') ?? String(PROFIT_SCORE_THRESHOLD));
+  const limit = parseInt(c.req.query('limit') ?? '50');
 
-const topTokens = await db.select()
-.from(tokens)
-.where(gte(tokens.score, 40))
-.orderBy(desc(tokens.score))
-.limit(5)
-.all();
+  const rows = await orm
+    .select()
+    .from(tokens)
+    .where(gte(tokens.score, minScore))
+    .orderBy(desc(tokens.firstSeen))
+    .limit(Math.min(limit, 200))
+    .all();
 
-return c.json(topTokens);
+  return c.json(rows);
 });
 
-tokenRoutes.get('/feed', async (c) => {
-const db = drizzle(c.env.DB);
-const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
-const offset = Math.max(parseInt(c.req.query('offset') || '0'), 0);
+tokensRouter.get('/hot', async (c) => {
+  const orm = drizzle(c.env.DB);
+  const rows = await orm
+    .select()
+    .from(tokens)
+    .where(and(gte(tokens.score, PROFIT_SCORE_THRESHOLD), gte(tokens.scamScore, 0)))
+    .orderBy(desc(tokens.score))
+    .limit(20)
+    .all();
 
-const feed = await db.select()
-.from(tokens)
-.orderBy(desc(tokens.firstSeen))
-.limit(limit)
-.offset(offset)
-.all();
-
-const total = await db.select({ count: tokens.mint }).from(tokens).all();
-
-return c.json({ data: feed, total: total.length, limit, offset });
+  // Filter out rug risk
+  const safe = rows.filter((t) => (t.scamScore ?? 0) < SCAM_THRESHOLD && !t.isRugRisk);
+  return c.json(safe);
 });
 
-tokenRoutes.get('/search', async (c) => {
-const query = c.req.query('q');
-if (!query || query.length < 2) {
-return c.json({ error: 'Search query too short' }, 400);
-}
-
-const db = drizzle(c.env.DB);
-
-const results = await db.select()
-.from(tokens)
-.where(eq(tokens.symbol, query.toUpperCase()))
-.or(eq(tokens.name, query))
-.limit(10)
-.all();
-
-return c.json(results);
+tokensRouter.get('/:mint', async (c) => {
+  const mint = c.req.param('mint');
+  const orm = drizzle(c.env.DB);
+  const token = await orm.select().from(tokens).where(eq(tokens.mint, mint)).get();
+  if (!token) return c.json({ error: 'Token not found' }, 404);
+  return c.json(token);
 });
 
-tokenRoutes.get('/:mint', async (c) => {
-const mint = c.req.param('mint');
-const db = drizzle(c.env.DB);
-
-const token = await db.select().from(tokens).where(eq(tokens.mint, mint)).get();
-if (!token) {
-return c.json({ error: 'Token not found' }, 404);
-}
-
-return c.json(token);
+// Discovery feed status / trigger
+tokensRouter.post('/discover', async (c) => {
+  // The Python master_bot.py or a Durable Object monitors pump.fun WS.
+  // This endpoint returns connection info for the client to subscribe directly,
+  // or triggers a background discovery job if you have a DO runner.
+  return c.json({
+    wsUrl: PUMPFUN_WS_URL,
+    note: 'Subscribe to pump.fun WS via master_bot.py or StrategyRunner DO for real-time discovery. Tokens are written to DB as they are found.',
+    status: 'operational',
+  });
 });
 
-tokenRoutes.post('/:mint/analyze', async (c) => {
-const mint = c.req.param('mint');
-
-try {
-const score = await analyzeToken(mint, c.env);
-return c.json({ mint, score });
-} catch (error: any) {
-return c.json({ error: 'Analysis failed', details: error.message }, 500);
-}
-});
-
-tokenRoutes.get('/:mint/chart', async (c) => {
-const mint = c.req.param('mint');
-const db = drizzle(c.env.DB);
-
-const token = await db.select({ chartData: tokens.chartData }).from(tokens).where(eq(tokens.mint, mint)).get();
-if (!token || !token.chartData) {
-return c.json({ error: 'No chart data available' }, 404);
-}
-
-try {
-const chartData = JSON.parse(token.chartData);
-return c.json(chartData);
-} catch {
-return c.json({ error: 'Invalid chart data' }, 500);
-}
-});
-
-export default tokenRoutes;
+export default tokensRouter;
