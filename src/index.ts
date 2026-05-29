@@ -25,6 +25,7 @@ import strategiesRouter from './routes/strategies';
 import tokensRouter from './routes/tokens';
 import alertsRouter from './routes/alerts';
 import runConfigRouter from './routes/runConfig';
+import telemetryRouter from './routes/telemetry';
 
 import { trades, tokens, positions, userSettings, auditLogs, users } from './db/schema';
 
@@ -63,7 +64,7 @@ app.get('/health', (c) =>
     status: 'OK',
     version: '3.0.0-evolved',
     ts: new Date().toISOString(),
-    features: ['auth', 'risk-engine', 'trade-queue', 'analytics', 'strategies', 'alerts', 'ws', 'do', 'notifier', 'run-config'],
+    features: ['auth', 'risk-engine', 'trade-queue', 'analytics', 'strategies', 'alerts', 'ws', 'do', 'notifier', 'run-config', 'telemetry'],
   })
 );
 
@@ -89,6 +90,7 @@ app.route('/api/protected/tokens', tokensRouter);
 app.route('/api/protected/analytics', analyticsRouter);
 app.route('/api/protected/alerts', alertsRouter);
 app.route('/api/protected/run-config', runConfigRouter);
+app.route('/api/protected/telemetry', telemetryRouter);
 
 const snipeSchema = z.object({
   mint: z.string().min(32).max(44),
@@ -181,7 +183,7 @@ app.get('/ws', async (c) => {
   server.send(
     JSON.stringify({
       type: 'welcome',
-      msg: 'pump-sniper v3 real-time feed. Events: token_discovered | trade_queued | trade_confirmed | trade_failed | risk_breach | run_config_updated',
+      msg: 'pump-sniper v3 real-time feed. Events: token_discovered | trade_queued | trade_confirmed | trade_failed | risk_breach | run_config_updated | telemetry',
       ts: Date.now(),
     })
   );
