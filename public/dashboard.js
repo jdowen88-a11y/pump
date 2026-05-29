@@ -1,5 +1,6 @@
 const state = {
-  tape: []
+  tape: [],
+  apiToken: localStorage.getItem('pump_sniper_api_token') || ''
 };
 
 const els = {
@@ -12,10 +13,146 @@ const els = {
   signals: document.getElementById('signals'),
   tokenStats: document.getElementById('tokenStats'),
   eventTape: document.getElementById('eventTape'),
-  chart: document.getElementById('priceChart')
+  chart: document.getElementById('priceChart'),
+  runSetupForm: document.getElementById('runSetupForm'),
+  validateSetup: document.getElementById('validateSetup'),
+  setupPreview: document.getElementById('setupPreview'),
+  apiToken: document.getElementById('apiToken')
 };
 
 const ctx = els.chart.getContext('2d');
+
+if (els.apiToken && state.apiToken) {
+  els.apiToken.value = state.apiToken;
+}
+
+function setStatus(text) {
+  els.connectionStatus.textContent = text;
+}
+
+function previewConfig(title, payload) {
+  if (!els.setupPreview) return;
+  els.setupPreview.textContent = `${title}\n${JSON.stringify(payload, null, 2)}`;
+}
+
+function getAuthHeaders() {
+  const token = els.apiToken?.value?.trim() || state.apiToken;
+  const headers = { 'Content-Type': 'application/json' };
+
+  if (token) {
+    state.apiToken = token;
+    localStorage.setItem('pump_sniper_api_token', token);
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+function readRunConfigForm() {
+  return {
+    betUsd: Number(document.getElementById('betUsd').value),
+    buySol: Number(document.getElementById('buySol').value),
+    targetProfitPercent: Number(document.getElementById('targetProfitPercent').value),
+    stopLossPercent: Number(document.getElementById('stopLossPercent').value),
+    takeProfitPercent: Number(document.getElementById('takeProfitPercent').value),
+    slippagePercent: Number(document.getElementById('slippagePercent').value),
+    minScore: Number(document.getElementById('minScore').value),
+    maxDevWalletPercent: Number(document.getElementById('maxDevWalletPercent').value),
+    maxSnipers: Number(document.getElementById('maxSnipers').value),
+    maxTopTenPercent: Number(document.getElementById('maxTopTenPercent').value),
+    rounds: Number(document.getElementById('rounds').value),
+    requestedMode: document.getElementById('requestedMode').value,
+    realismMode: document.getElementById('realismMode').value,
+    keepSeedOnly: document.getElementById('keepSeedOnly').checked,
+    harshMode: document.getElementById('harshMode').checked
+  };
+}
+
+function fillRunConfigForm(config) {
+  if (!config) return;
+
+  Object.entries(config).forEach(([key, value]) => {
+    const input = document.getElementById(key);
+    if (!input || key === 'updatedAt') return;
+
+    if (input.type === 'checkbox') input.checked = Boolean(value);
+    else input.value = value;
+  });
+}
+
+async function callRunConfig(path, options = {}) {
+  const res = await fetch(`/api/protected/run-config${path}`, {
+    ...options,
+    headers: {
+      ...getAuthHeaders(),
+      ...(options.headers || {})
+    }
+  });
+
+  const data = await res.json().catch(() => ({ ok: false, error: 'Invalid JSON response' }));
+  if (!res.ok) throw new Error(data?.error || data?.message || `Request failed: ${res.status}`);
+  return data;
+}
+
+async function loadSavedRunConfig() {
+  try {
+    const data = await callRunConfig('');
+    fillRunConfigForm(data.config);
+    previewConfig('Loaded saved run config', data);
+  } catch (err) {
+    previewConfig('Run config not loaded. Login/API token may be required.', { error: String(err) });
+  }
+}
+
+async function validateRunConfig() {
+  const config = readRunConfigForm();
+
+  try {
+    const data = await callRunConfig('/validate', {
+      method: 'POST',
+      body: JSON.stringify(config)
+    });
+    previewConfig('Validation passed', data);
+    return { ok: true, data };
+  } catch (err) {
+    previewConfig('Validation failed', { error: String(err), config });
+    return { ok: false, error: err };
+  }
+}
+
+async function saveRunConfig() {
+  const config = readRunConfigForm();
+
+  try {
+    const data = await callRunConfig('', {
+      method: 'POST',
+      body: JSON.stringify(config)
+    });
+    previewConfig('Run config saved', data);
+    return { ok: true, data };
+  } catch (err) {
+    previewConfig('Run config save failed', { error: String(err), config });
+    return { ok: false, error: err };
+  }
+}
+
+function bindControllerControls() {
+  els.validateSetup?.addEventListener('click', () => validateRunConfig());
+
+  els.runSetupForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const result = await saveRunConfig();
+
+    if (result.ok) {
+      pushTape({
+        token: 'RUN_CONFIG',
+        decision: 'SAVED',
+        exitReason: 'awaiting runtime pickup',
+        score: result.data.config?.minScore ?? '-'
+      });
+    }
+  });
+}
 
 function drawChart(pricePath = [], volumePath = []) {
   ctx.clearRect(0, 0, els.chart.width, els.chart.height);
@@ -35,7 +172,7 @@ function drawChart(pricePath = [], volumePath = []) {
   const min = Math.min(...pricePath.map(p => p[1]));
 
   pricePath.forEach((point, index) => {
-    const x = (index / (pricePath.length - 1)) * (els.chart.width - 60) + 30;
+    const x = (index / Math.max(1, pricePath.length - 1)) * (els.chart.width - 60) + 30;
     const y = els.chart.height - (((point[1] - min) / ((max - min) || 1)) * 300 + 60);
 
     if (index === 0) ctx.moveTo(x, y);
@@ -45,8 +182,8 @@ function drawChart(pricePath = [], volumePath = []) {
   ctx.stroke();
 
   volumePath.forEach((vol, index) => {
-    const x = (index / volumePath.length) * (els.chart.width - 60) + 30;
-    const h = vol * 20;
+    const x = (index / Math.max(1, volumePath.length)) * (els.chart.width - 60) + 30;
+    const h = Math.max(1, Number(vol) * 20);
     ctx.fillStyle = 'rgba(88, 166, 255, 0.35)';
     ctx.fillRect(x, els.chart.height - h - 10, 8, h);
   });
@@ -69,7 +206,13 @@ function renderTokenStats(data) {
     exitReason: data.exitReason,
     exitMult: data.exitMult,
     activeWallet: data.activeWallet,
-    withdrawn: data.withdrawn
+    withdrawn: data.withdrawn,
+    holders: data.holders,
+    snipers: data.snipers,
+    devWalletPercent: data.devWalletPercent,
+    topTenPercent: data.topTenPercent,
+    marketCap: data.marketCap,
+    volume: data.volume
   };
 
   els.tokenStats.innerHTML = '';
@@ -95,7 +238,7 @@ function pushTape(entry) {
 }
 
 function updateDashboard(data) {
-  els.connectionStatus.textContent = 'telemetry online';
+  setStatus('telemetry online');
   els.mode.textContent = data.mode || '-';
   els.decision.textContent = data.decision || '-';
   els.score.textContent = data.score || '-';
@@ -108,42 +251,26 @@ function updateDashboard(data) {
   pushTape(data);
 }
 
-function simulateFeed() {
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+function connectFeed() {
+  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${protocol}://${location.host}/ws`);
 
-  ws.onopen = () => {
-    els.connectionStatus.textContent = 'connected to websocket';
+  ws.onopen = () => setStatus('connected to websocket');
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'telemetry') updateDashboard(data.payload);
+      else pushTape({ token: data.type || 'WS', decision: 'EVENT', exitReason: data.msg || 'message', score: '-' });
+    } catch {
+      pushTape({ token: 'WS', decision: 'RAW', exitReason: event.data, score: '-' });
+    }
   };
 
-  ws.onmessage = () => {
-    const fake = {
-      mode: 'READ ONLY',
-      decision: Math.random() > 0.5 ? 'BUY' : 'SKIP',
-      token: 'PUMP_' + Math.floor(Math.random() * 9999),
-      score: Math.floor(Math.random() * 40) + 60,
-      pressure: ['weak','moderate','strong','viral'][Math.floor(Math.random() * 4)],
-      pnlUsd: ((Math.random() - 0.5) * 40).toFixed(2),
-      withdrawn: (Math.random() * 200).toFixed(2),
-      activeWallet: (100 + Math.random() * 500).toFixed(2),
-      exitReason: ['TRAIL_STOP','MOONSHOT_EXIT','TIME_EXIT','LOSS_CUT'][Math.floor(Math.random() * 4)],
-      exitMult: (1 + Math.random() * 3).toFixed(2),
-      signals: {
-        dev: 'dynamic analysis',
-        snipe: 'wallet cluster monitoring',
-        momentum: 'volume acceleration',
-        hype: 'social pressure rising',
-        curve: 'bonding curve healthy'
-      },
-      pricePath: Array.from({ length: 24 }, (_, i) => [i * 5, 1 + Math.sin(i / 4) + Math.random()]),
-      volumePath: Array.from({ length: 24 }, () => Math.random() * 8)
-    };
-
-    updateDashboard(fake);
-  };
-
-  ws.onerror = () => {
-    els.connectionStatus.textContent = 'websocket unavailable';
-  };
+  ws.onerror = () => setStatus('websocket unavailable');
+  ws.onclose = () => setStatus('websocket closed');
 }
 
-simulateFeed();
+bindControllerControls();
+loadSavedRunConfig();
+connectFeed();
