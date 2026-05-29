@@ -2,8 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Pump Bot" />
   <title>Pump Sniper Live Telemetry</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -19,20 +24,21 @@
     <section class="card setup-panel">
       <div class="section-title">
         <h2>Run setup</h2>
-        <span>Enter parameters, validate, then start</span>
+        <span>iOS-ready controller</span>
       </div>
       <form id="runSetupForm" class="setup-grid">
-        <label>Bet size USD<input id="betUsd" type="number" min="0" step="0.01" value="17.50" /></label>
-        <label>Buy size SOL<input id="buySol" type="number" min="0" step="0.0001" value="0.1" /></label>
-        <label>Target profit %<input id="targetProfitPercent" type="number" min="0" step="0.1" value="10" /></label>
-        <label>Stop loss %<input id="stopLossPercent" type="number" min="0" step="0.1" value="12" /></label>
-        <label>Take profit %<input id="takeProfitPercent" type="number" min="0" step="0.1" value="25" /></label>
-        <label>Slippage %<input id="slippagePercent" type="number" min="0" step="0.1" value="10" /></label>
-        <label>Minimum score<input id="minScore" type="number" min="0" max="100" step="1" value="65" /></label>
-        <label>Max dev wallet %<input id="maxDevWalletPercent" type="number" min="0" max="100" step="0.1" value="8" /></label>
-        <label>Max snipers<input id="maxSnipers" type="number" min="0" step="1" value="5" /></label>
-        <label>Max top 10 holders %<input id="maxTopTenPercent" type="number" min="0" max="100" step="0.1" value="20" /></label>
-        <label>Rounds<input id="rounds" type="number" min="1" step="1" value="500" /></label>
+        <label class="wide">API token / session token<input id="apiToken" type="password" autocomplete="off" placeholder="Paste token once on iPhone" /></label>
+        <label>Bet size USD<input id="betUsd" type="number" min="0" step="0.01" value="17.50" inputmode="decimal" /></label>
+        <label>Buy size SOL<input id="buySol" type="number" min="0" step="0.0001" value="0.1" inputmode="decimal" /></label>
+        <label>Target profit %<input id="targetProfitPercent" type="number" min="0" step="0.1" value="10" inputmode="decimal" /></label>
+        <label>Stop loss %<input id="stopLossPercent" type="number" min="0" step="0.1" value="12" inputmode="decimal" /></label>
+        <label>Take profit %<input id="takeProfitPercent" type="number" min="0" step="0.1" value="25" inputmode="decimal" /></label>
+        <label>Slippage %<input id="slippagePercent" type="number" min="0" step="0.1" value="10" inputmode="decimal" /></label>
+        <label>Minimum score<input id="minScore" type="number" min="0" max="100" step="1" value="65" inputmode="numeric" /></label>
+        <label>Max dev wallet %<input id="maxDevWalletPercent" type="number" min="0" max="100" step="0.1" value="8" inputmode="decimal" /></label>
+        <label>Max snipers<input id="maxSnipers" type="number" min="0" step="1" value="5" inputmode="numeric" /></label>
+        <label>Max top 10 holders %<input id="maxTopTenPercent" type="number" min="0" max="100" step="0.1" value="20" inputmode="decimal" /></label>
+        <label>Rounds<input id="rounds" type="number" min="1" step="1" value="500" inputmode="numeric" /></label>
         <label>Mode
           <select id="requestedMode">
             <option value="dry">Dry run</option>
@@ -48,7 +54,7 @@
         </label>
         <label class="checkbox-row"><input id="keepSeedOnly" type="checkbox" checked /> Keep seed only</label>
         <label class="checkbox-row"><input id="harshMode" type="checkbox" /> Harsh mode</label>
-        <div class="button-row">
+        <div class="button-row wide">
           <button type="button" id="validateSetup">Validate</button>
           <button type="submit" class="go-button">Start automation</button>
         </div>
