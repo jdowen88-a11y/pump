@@ -10,11 +10,51 @@
   <main class="shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">READ-ONLY BOT VISION</p>
+        <p class="eyebrow">BOT CONTROL + LIVE VISION</p>
         <h1>Pump Sniper Dashboard</h1>
       </div>
       <div class="status-pill" id="connectionStatus">waiting for telemetry</div>
     </header>
+
+    <section class="card setup-panel">
+      <div class="section-title">
+        <h2>Run setup</h2>
+        <span>Enter parameters, validate, then start</span>
+      </div>
+      <form id="runSetupForm" class="setup-grid">
+        <label>Bet size USD<input id="betUsd" type="number" min="0" step="0.01" value="17.50" /></label>
+        <label>Buy size SOL<input id="buySol" type="number" min="0" step="0.0001" value="0.1" /></label>
+        <label>Target profit %<input id="targetProfitPercent" type="number" min="0" step="0.1" value="10" /></label>
+        <label>Stop loss %<input id="stopLossPercent" type="number" min="0" step="0.1" value="12" /></label>
+        <label>Take profit %<input id="takeProfitPercent" type="number" min="0" step="0.1" value="25" /></label>
+        <label>Slippage %<input id="slippagePercent" type="number" min="0" step="0.1" value="10" /></label>
+        <label>Minimum score<input id="minScore" type="number" min="0" max="100" step="1" value="65" /></label>
+        <label>Max dev wallet %<input id="maxDevWalletPercent" type="number" min="0" max="100" step="0.1" value="8" /></label>
+        <label>Max snipers<input id="maxSnipers" type="number" min="0" step="1" value="5" /></label>
+        <label>Max top 10 holders %<input id="maxTopTenPercent" type="number" min="0" max="100" step="0.1" value="20" /></label>
+        <label>Rounds<input id="rounds" type="number" min="1" step="1" value="500" /></label>
+        <label>Mode
+          <select id="requestedMode">
+            <option value="dry">Dry run</option>
+            <option value="live">Real run</option>
+          </select>
+        </label>
+        <label>Realism
+          <select id="realismMode">
+            <option value="soft">Soft</option>
+            <option value="realistic" selected>Realistic</option>
+            <option value="full">Full</option>
+          </select>
+        </label>
+        <label class="checkbox-row"><input id="keepSeedOnly" type="checkbox" checked /> Keep seed only</label>
+        <label class="checkbox-row"><input id="harshMode" type="checkbox" /> Harsh mode</label>
+        <div class="button-row">
+          <button type="button" id="validateSetup">Validate</button>
+          <button type="submit" class="go-button">Start automation</button>
+        </div>
+      </form>
+      <pre id="setupPreview" class="setup-preview">No setup submitted yet.</pre>
+    </section>
 
     <section class="grid metrics">
       <article class="card"><span>Mode</span><strong id="mode">-</strong></article>
