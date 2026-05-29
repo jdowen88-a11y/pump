@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pump Sniper Live Telemetry</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">READ-ONLY BOT VISION</p>
+        <h1>Pump Sniper Dashboard</h1>
+      </div>
+      <div class="status-pill" id="connectionStatus">waiting for telemetry</div>
+    </header>
+
+    <section class="grid metrics">
+      <article class="card"><span>Mode</span><strong id="mode">-</strong></article>
+      <article class="card"><span>Decision</span><strong id="decision">-</strong></article>
+      <article class="card"><span>Score</span><strong id="score">-</strong></article>
+      <article class="card"><span>PnL</span><strong id="pnl">-</strong></article>
+    </section>
+
+    <section class="grid main-grid">
+      <article class="card chart-card">
+        <div class="section-title">
+          <h2>TradingView-style price / volume</h2>
+          <span id="tokenName">no token loaded</span>
+        </div>
+        <canvas id="priceChart" width="1100" height="420"></canvas>
+      </article>
+
+      <article class="card">
+        <div class="section-title"><h2>Internal signal stack</h2></div>
+        <dl id="signals" class="signals"></dl>
+      </article>
+    </section>
+
+    <section class="grid lower-grid">
+      <article class="card">
+        <div class="section-title"><h2>Token row monitor</h2></div>
+        <div id="tokenStats" class="kv"></div>
+      </article>
+
+      <article class="card">
+        <div class="section-title"><h2>Execution / decision tape</h2></div>
+        <ol id="eventTape" class="tape"></ol>
+      </article>
+    </section>
+  </main>
+  <script src="./dashboard.js"></script>
+</body>
+</html>
