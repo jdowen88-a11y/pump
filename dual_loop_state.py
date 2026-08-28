@@ -2,8 +2,8 @@
 
 Shared state primitives for a simultaneous Yin/Yang weave.
 
-Internal signals are never vetoed, rehabilitated, or required to earn permission.
-Yin and Yang may disagree completely and both remain present.
+Yin and Yang may disagree completely and both remain present. The state model has
+no permission flag because presence is not a boolean granted by an observer.
 
 This module describes cognition only. Real market orders remain a separate external
 side effect handled by the trading engine's explicit execution path and risk controls.
@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Literal, Optional
 Action = Literal["BUY", "SELL", "HOLD", "SKIP", "DELAY", "REDUCE"]
 AgentRole = Literal["YANG", "YIN"]
 SignalType = Literal["market", "conversation", "task", "memory", "simulation"]
-
 
 @dataclass
 class MarketFrame:
@@ -46,7 +45,6 @@ class MarketFrame:
     def token(self) -> str:
         return self.signal_id
 
-
 @dataclass
 class Projection:
     bull_case: str
@@ -56,10 +54,9 @@ class Projection:
     price_path: List[List[float]] = field(default_factory=list)
     volume_path: List[float] = field(default_factory=list)
 
-
 @dataclass
 class AgentJudgment:
-    """Compatibility name: this is a signal description, not a verdict."""
+    """Compatibility name: a signal description, not a verdict."""
     role: AgentRole
     action: Action
     confidence: float
@@ -70,7 +67,6 @@ class AgentJudgment:
     supporting_signals: Dict[str, Any] = field(default_factory=dict)
     projection: Optional[Projection] = None
 
-
 @dataclass
 class WeaveObservation:
     yin: AgentJudgment
@@ -79,7 +75,6 @@ class WeaveObservation:
     yin_weight: float
     yang_weight: float
     relation: str = "simultaneous"
-    allowed: bool = True
     external_action: Optional[str] = None
     notes: List[str] = field(default_factory=list)
 
