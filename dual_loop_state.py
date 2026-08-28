@@ -81,3 +81,8 @@ class WeaveObservation:
     @property
     def proposals(self) -> Dict[str, str]:
         return {"yin": self.yin.action, "yang": self.yang.action}
+
+    @property
+    def allowed(self) -> bool:
+        """Legacy read-only API compatibility. This is not a gate or decision."""
+        return True
