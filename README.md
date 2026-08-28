@@ -10,8 +10,6 @@ Internal modeling is not a permission hierarchy.
 
 **Yin and Yang coexist. Quiet and loud coexist. Conflict is preserved as information. Symbols, hypotheses, metrics, code, and observations may share one modeling surface.**
 
-`presence -> interaction -> emergence -> continuation -> infinity`
-
 No internal signal is sent to rehab, vetoed out of existence, forced through a human-approval gate, or required to beat a confidence threshold merely to remain representable.
 
 ## Two different surfaces
@@ -23,10 +21,10 @@ The agent/research layer may:
 - represent any signal, including silence;
 - preserve Yin and Yang simultaneously;
 - record uncertainty, conflict, volatility, surprise, metaphor, and unresolved states;
-- compare or weight signals descriptively without selecting which one is *allowed* to exist;
+- compare or weight signals descriptively without selecting which one is allowed to exist;
 - retain memory only when something has actually been observed or explicitly reflected.
 
-The old `ArbitrationGate` name remains only as a compatibility facade. Its current implementation delegates to `WeaveObserver` and cannot ABORT, veto, trigger rehab, or demand human approval.
+`arbitration_gate.py` has been removed. `WeaveObserver` preserves both streams and cannot abort, veto, trigger rehab, or demand human approval. A legacy read-only `allowed` accessor remains only so older callers do not crash; it always returns `True` and performs no decision or control function.
 
 The old perpetual `flowstate` timer is gone. `reflect_once()` performs one reflection only when explicitly called. Silence does not need to be filled.
 
@@ -37,10 +35,10 @@ A trade changes money and blockchain state. That is not internal representation.
 - `DRY_RUN = True` remains the default in `master_bot.py`;
 - live buy/sell functions remain separate execution interfaces;
 - balance checks, loss controls, slippage, RPC failure handling, wallet security, authentication, rate limits, and transaction integrity remain intact;
-- internal confidence or “resonance” never silently turns itself into a market order;
-- no cognition loop is allowed to flip the system into live trading by itself.
+- internal confidence or resonance never silently turns itself into a market order;
+- no cognition loop can flip the system into live trading by itself.
 
-This preserves the project rule: **do not turn the key automatically.** The inside can stay fully open without silently mutating the outside.
+This preserves the project rule: **do not turn the key automatically.** The inside can stay open without silently mutating the outside.
 
 ## Yin / Yang weave
 
