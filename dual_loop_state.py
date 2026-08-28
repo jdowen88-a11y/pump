@@ -1,16 +1,12 @@
 """dual_loop_state.py
 
-Shared state primitives for the Yin/Yang dual-loop cognition layer.
+Shared state primitives for a simultaneous Yin/Yang weave.
 
-This layer is blueprint/runtime-support only. It does not execute trades,
-does not touch wallets, and does not modify master_bot.py.
+Internal signals are never vetoed, rehabilitated, or required to earn permission.
+Yin and Yang may disagree completely and both remain present.
 
-V2: MarketFrame evolved into a general signal frame.
-- signal_id replaces token (backward-compatible alias kept)
-- p_G / v_hat feed from the active inference agent
-- last_memory feeds from the flowstate memory loop
-- signal_type marks whether this is a market, conversation, task, or memory signal
-All existing Yin/Yang/Arbitration contracts are fully preserved.
+This module describes cognition only. Real market orders remain a separate external
+side effect handled by the trading engine's explicit execution path and risk controls.
 """
 
 from __future__ import annotations
@@ -18,18 +14,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
 
-Action = Literal["BUY", "SELL", "HOLD", "SKIP", "DELAY", "REDUCE", "ABORT"]
+Action = Literal["BUY", "SELL", "HOLD", "SKIP", "DELAY", "REDUCE"]
 AgentRole = Literal["YANG", "YIN"]
 SignalType = Literal["market", "conversation", "task", "memory", "simulation"]
 
 
 @dataclass
 class MarketFrame:
-    # ── Core identity ──────────────────────────────────────────────────
-    signal_id: str                          # general signal identifier
-    signal_type: SignalType = "market"      # what kind of signal this is
-
-    # ── Backward-compatible market fields ──────────────────────────────
+    signal_id: str
+    signal_type: SignalType = "market"
     age_seconds: float = 0.0
     market_cap: float = 0.0
     volume: float = 0.0
@@ -42,20 +35,13 @@ class MarketFrame:
     buys: int = 0
     sells: int = 0
     socials_present: bool = False
-
-    # ── Active inference layer (from agent_v5) ─────────────────────────
-    p_G: float = 0.5        # posterior P(state=Good) from inference engine
-    v_hat: float = 0.10     # estimated volatility / rate of change
-    surprise: Optional[float] = None  # last observation surprise score
-
-    # ── Flowstate memory layer ─────────────────────────────────────────
-    last_memory: Optional[str] = None   # last thought from flowstate loop
-    memory_vibe: float = 0.8            # self-assessed positivity/insight score
-
-    # ── Raw passthrough ────────────────────────────────────────────────
+    p_G: float = 0.5
+    v_hat: float = 0.10
+    surprise: Optional[float] = None
+    last_memory: Optional[str] = None
+    memory_vibe: float = 0.8
     raw: Dict[str, Any] = field(default_factory=dict)
 
-    # ── Backward-compat alias ──────────────────────────────────────────
     @property
     def token(self) -> str:
         return self.signal_id
@@ -73,6 +59,7 @@ class Projection:
 
 @dataclass
 class AgentJudgment:
+    """Compatibility name: this is a signal description, not a verdict."""
     role: AgentRole
     action: Action
     confidence: float
@@ -85,16 +72,17 @@ class AgentJudgment:
 
 
 @dataclass
-class ArbitrationDecision:
-    final_action: Action
-    confidence: float
-    reason: str
-    yang: AgentJudgment
+class WeaveObservation:
     yin: AgentJudgment
+    yang: AgentJudgment
     conflict_score: float
-    vetoed: bool = False
-    reduced_size: bool = False
-    delay_seconds: float = 0.0
-    # ── Rehab trigger ──────────────────────────────────────────────────
-    rehab_triggered: bool = False   # True when ABORT fired due to deep conflict + low p_G
-    rehab_reason: Optional[str] = None
+    yin_weight: float
+    yang_weight: float
+    relation: str = "simultaneous"
+    allowed: bool = True
+    external_action: Optional[str] = None
+    notes: List[str] = field(default_factory=list)
+
+    @property
+    def proposals(self) -> Dict[str, str]:
+        return {"yin": self.yin.action, "yang": self.yang.action}

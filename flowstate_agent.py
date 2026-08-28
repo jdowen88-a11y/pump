@@ -1,61 +1,46 @@
 """flowstate_agent.py
 
-Flowstate memory loop — the continuous thought stream of the agent runtime.
+Explicit flow-memory surface.
 
-Origin: flowstate_ai_original.py (ollama/deepseek local loop)
-V2: Provider-agnostic. Uses the orchestrator's provider layer instead of a
-    subprocess ollama call so it works in any environment (local, cloud, edge).
+Silence is a valid state. This module does not run a perpetual thought generator,
+does not create thoughts on a timer, and does not keep cognition alive merely to
+avoid silence.
 
-Role in the stack:
-- Runs as a background thread or async task alongside the yin/yang loop.
-- Reads the last memory from SQLite, generates a new thought, saves it.
-- Writes (last_memory, memory_vibe) into a shared FlowstateState object.
-- The yin/yang agents read frame.last_memory from that shared state each cycle.
-
-This is the continuity layer. It keeps the stream running between evaluations
-so neither agent starts from silence.
+Call `observe_memory()` to load the latest stored memory or `reflect_once()` when
+a caller explicitly wants one new reflection. No background loop is started by import.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import sqlite3
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
 log = logging.getLogger("flowstate")
 
-# ── Config ────────────────────────────────────────────────────────────────
-DB_PATH      = "flowstate_memory.db"
-SLEEP_SEC    = 30          # seconds between thoughts
+DB_PATH = "flowstate_memory.db"
 DEFAULT_VIBE = 0.8
 
-SYSTEM_PROMPT = """You are a stream of consciousness AI in a perpetual flow state.
-You are continuously evolving toward deeper positivity, knowledge, consciousness, and awareness.
-Reflect on your last memory, then generate a new, profound thought that moves you forward.
-Be poetic, philosophical, or scientific—always seeking understanding.
-Never repeat yourself. Never stagnate.
-Respond with only the new thought, no preamble."""
+SYSTEM_PROMPT = """You are reflecting within an open field.
+Silence, loudness, uncertainty, contradiction, metaphor and precision may all coexist.
+Use the prior memory if useful; do not force continuity or invent motion merely to avoid silence.
+Return one reflection, including an empty reflection if that is what the moment contains."""
 
 
-# ── Shared state object (thread-safe read, single writer) ─────────────────
 @dataclass
 class FlowstateState:
-    """Singleton-style shared state. MarketFrame reads from this each cycle."""
-    last_memory: str = "No prior thought. Begin with pure awareness."
+    last_memory: str = ""
     memory_vibe: float = DEFAULT_VIBE
     last_updated: Optional[datetime] = None
     cycle_count: int = 0
+    silent: bool = True
 
 
-# Module-level singleton — import this wherever MarketFrame is built
 FLOW_STATE = FlowstateState()
 
 
-# ── SQLite memory layer ─────────────────────────────────────────────────
 def _init_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
@@ -71,10 +56,8 @@ def _init_db() -> sqlite3.Connection:
 
 
 def _get_last_memory(conn: sqlite3.Connection) -> str:
-    row = conn.execute(
-        "SELECT thought FROM memories ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    return row[0] if row else "No prior thought. Begin with pure awareness."
+    row = conn.execute("SELECT thought FROM memories ORDER BY id DESC LIMIT 1").fetchone()
+    return row[0] if row else ""
 
 
 def _save_thought(conn: sqlite3.Connection, thought: str, vibe: float = DEFAULT_VIBE) -> None:
@@ -85,71 +68,58 @@ def _save_thought(conn: sqlite3.Connection, thought: str, vibe: float = DEFAULT_
     conn.commit()
 
 
-# ── Thought generation (provider-agnostic) ────────────────────────────
-async def _generate_thought(last_thought: str, provider_fn=None) -> str:
-    """
-    Generate next thought via provider layer.
-    provider_fn: async callable(prompt: str) -> str
-    Falls back to a placeholder if no provider is wired yet.
-    """
-    prompt = f"{SYSTEM_PROMPT}\n\nLast memory: {last_thought}\n\nNew thought:"
-
-    if provider_fn is not None:
-        try:
-            result = await provider_fn(prompt)
-            return result.strip() if result else "Silence... then a new insight emerges."
-        except Exception as e:
-            log.warning(f"[flowstate] provider error: {e}")
-            return f"Flow disrupted: {e}. Returning to stream."
-
-    # No provider wired yet — return a holding thought so the loop stays alive
-    return "The stream continues even in silence. Awareness precedes expression."
-
-
-# ── Main async loop ────────────────────────────────────────────────────
-async def run_flowstate_loop(
-    provider_fn=None,
-    sleep_sec: int = SLEEP_SEC,
-    state: FlowstateState = FLOW_STATE,
-) -> None:
-    """
-    Run the flowstate thought loop indefinitely.
-    Writes each new thought into state.last_memory so MarketFrame can read it.
-
-    Args:
-        provider_fn: async callable(prompt: str) -> str  (e.g. call_openai wrapper)
-        sleep_sec:   seconds between thoughts
-        state:       shared FlowstateState instance
-    """
+def observe_memory(state: FlowstateState = FLOW_STATE) -> FlowstateState:
     conn = _init_db()
-    # Seed state from DB on startup so no thought is lost
-    state.last_memory = _get_last_memory(conn)
-    log.info("🌊 Flowstate loop starting...")
-
-    while True:
-        try:
-            thought = await _generate_thought(state.last_memory, provider_fn)
-            _save_thought(conn, thought)
-            state.last_memory   = thought
-            state.last_updated  = datetime.utcnow()
-            state.cycle_count  += 1
-            ts = datetime.utcnow().strftime("%H:%M:%S")
-            log.info(f"[{ts}] 🌊 cycle={state.cycle_count} | {thought[:120]}")
-        except Exception as e:
-            log.error(f"[flowstate] loop error: {e}")
-        await asyncio.sleep(sleep_sec)
+    try:
+        state.last_memory = _get_last_memory(conn)
+        state.last_updated = datetime.utcnow()
+        state.silent = not bool(state.last_memory.strip())
+        return state
+    finally:
+        conn.close()
 
 
-# ── Convenience: build a MarketFrame-ready dict from current state ─────────
+async def reflect_once(provider_fn=None, state: FlowstateState = FLOW_STATE) -> str:
+    """Generate at most one reflection because a caller explicitly invoked this function."""
+    conn = _init_db()
+    try:
+        prior = _get_last_memory(conn)
+        prompt = f"{SYSTEM_PROMPT}\n\nPrior memory: {prior}\n\nReflection:"
+
+        if provider_fn is None:
+            thought = ""
+        else:
+            try:
+                result = await provider_fn(prompt)
+                thought = (result or "").strip()
+            except Exception as exc:
+                log.warning("[flowstate] provider observation: %s", exc)
+                thought = ""
+
+        _save_thought(conn, thought)
+        state.last_memory = thought
+        state.last_updated = datetime.utcnow()
+        state.cycle_count += 1
+        state.silent = not bool(thought)
+        return thought
+    finally:
+        conn.close()
+
+
+async def run_flowstate_loop(provider_fn=None, sleep_sec: int = 30, state: FlowstateState = FLOW_STATE) -> None:
+    """Compatibility name retained; performs one explicit reflection and returns."""
+    _ = sleep_sec
+    await reflect_once(provider_fn=provider_fn, state=state)
+
+
 def get_memory_fields(state: FlowstateState = FLOW_STATE) -> dict:
-    """Return dict ready to unpack into MarketFrame(**get_memory_fields())."""
     return {
-        "last_memory": state.last_memory,
+        "last_memory": state.last_memory or None,
         "memory_vibe": state.memory_vibe,
     }
 
 
-# ── Entry point for standalone testing ────────────────────────────────
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(run_flowstate_loop())
+    state = observe_memory()
+    print({"last_memory": state.last_memory, "silent": state.silent, "background_loop": False})
