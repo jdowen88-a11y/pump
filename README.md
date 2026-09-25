@@ -2,7 +2,7 @@
 
 Experimental Solana/pump.fun research, simulation, dashboard, and trading infrastructure.
 
-> **High-risk software:** memecoin trading can lose all capital. The cognition/modeling field in this repository is open; that does **not** mean market execution is unconstrained. Real orders, wallet use, credentials, position sizing, loss limits, slippage controls, and operator-selected live mode remain explicit external-side-effect boundaries.
+> **High-risk software:** memecoin trading can lose all capital. The cognition/modeling field in this repository is open; that does **not** mean market execution is unconstrained. Real orders, wallet use, credentials, position sizing, loss limits, slippage controls, and operator-selected live mode remain explicit external-action safeguards.
 
 ## Core architecture rule
 
@@ -38,7 +38,7 @@ A trade changes money and blockchain state. That is not internal representation.
 - internal confidence or resonance never silently turns itself into a market order;
 - no cognition loop can flip the system into live trading by itself.
 
-This preserves the project rule: **do not turn the key automatically.** The inside can stay open without silently mutating the outside.
+The internal cognition key is on and stays on. Live market execution remains a separate explicit action, so an internal signal never becomes a trade by itself.
 
 ## Yin / Yang weave
 
@@ -71,7 +71,7 @@ A proposal such as `BUY`, `HOLD`, `DELAY`, or `SKIP` is descriptive output from 
 
 ## Application stack
 
-The repository also contains a Cloudflare/Hono/TypeScript control plane, database migrations, dashboard assets, simulation tooling, runtime configuration, analytics, and security infrastructure. Authentication and secret handling remain security boundaries, not cognition gates.
+The repository also contains a Cloudflare/Hono/TypeScript control plane, database migrations, dashboard assets, simulation tooling, runtime configuration, analytics, and security infrastructure. Authentication and secret handling remain security safeguards, not cognition gates.
 
 ## Secrets
 
