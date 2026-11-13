@@ -8,7 +8,7 @@ c.header('Access-Control-Allow-Credentials', 'true');
 c.header('Access-Control-Max-Age', '86400');
 
 if (c.req.method === 'OPTIONS') {
-return c.json({}, 204);
+return c.body(null, 204);
 }
 
 await next();
