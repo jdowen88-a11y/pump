@@ -5,7 +5,7 @@ const MAX_REQUESTS = 120; // per window
 
 export async function rateLimiter(c: Context, next: Next) {
 const userId = c.get('userId') || c.req.header('CF-Connecting-IP') || 'anonymous';
-const key = ratelimit:${userId};
+const key = `ratelimit:${userId}`;
 
 const current = await c.env.KV.get(key);
 const now = Math.floor(Date.now() / 1000);
