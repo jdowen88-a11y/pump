@@ -56,3 +56,12 @@ export interface TradeEvent {
 }
 
 // Add more: BacktestConfig, RiskParams, etc. as needed for full type safety
+
+/** Shared authenticated request variables: do not treat user IDs as unknown. */
+declare module 'hono' {
+  interface ContextVariableMap {
+    userId: string;
+    traceId: string;
+    user: import('jose').JWTPayload;
+  }
+}
