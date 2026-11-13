@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, desc, and } from 'drizzle-orm';
 import { trades, userSettings, tokens } from '../db/schema';
-import { executeSwap } from '../services/executor';
+import { executeSwap, SwapExecutionUnavailable } from '../services/executor';
 import { v4 as uuidv4 } from 'uuid';
 
 type Env = { DB: D1Database; KV: KVNamespace; SOLANA_RPC_URL: string; PRIVATE_KEY: string };
@@ -34,7 +34,7 @@ return c.json({ error: 'Auto-trade is disabled in your settings' }, 403);
 }
 
 if (amountSol > (settings?.maxBuySol || 0.1)) {
-return c.json({ error: Amount exceeds your max buy limit of ${settings?.maxBuySol} SOL }, 400);
+return c.json({ error: `Amount exceeds your max buy limit of ${settings?.maxBuySol} SOL` }, 400);
 }
 
 const token = await db.select({ score: tokens.score, scamScore: tokens.scamScore }).from(tokens).where(eq(tokens.mint, tokenMint)).get();
@@ -45,7 +45,7 @@ if (token.scamScore && token.scamScore > 70) {
 return c.json({ error: 'Token flagged as potential scam' }, 400);
 }
 if (token.score && token.score < (settings?.minScore || 60)) {
-return c.json({ error: Token score (${token.score}) below your minimum threshold (${settings?.minScore || 60}) }, 400);
+return c.json({ error: `Token score (${token.score}) below your minimum threshold (${settings?.minScore || 60})` }, 400);
 }
 
 const tradeId = uuidv4();
@@ -59,7 +59,6 @@ slippage || settings?.slippagePercent || 10,
 c.env
 );
 
-```
 await db.insert(trades).values({
   id: tradeId,
   userId,
@@ -77,9 +76,11 @@ return c.json({
   status: 'confirmed',
   explorerUrl: `https://solscan.io/tx/${txSignature}`,
 }, 201);
-```
 
 } catch (error: any) {
+if (error instanceof SwapExecutionUnavailable) {
+  return c.json({ error: 'Live swap execution is disabled until an executor is configured and tested.' }, 503);
+}
 await db.insert(trades).values({
 id: tradeId,
 userId,
@@ -89,9 +90,7 @@ amountSol,
 status: 'failed',
 });
 
-```
 return c.json({ error: 'Trade execution failed', details: error.message }, 500);
-```
 
 }
 });
@@ -113,7 +112,6 @@ slippage || settings?.slippagePercent || 10,
 c.env
 );
 
-```
 await db.insert(trades).values({
   id: tradeId,
   userId,
@@ -130,9 +128,11 @@ return c.json({
   status: 'confirmed',
   explorerUrl: `https://solscan.io/tx/${txSignature}`,
 }, 201);
-```
 
 } catch (error: any) {
+if (error instanceof SwapExecutionUnavailable) {
+  return c.json({ error: 'Live swap execution is disabled until an executor is configured and tested.' }, 503);
+}
 await db.insert(trades).values({
 id: tradeId,
 userId,
@@ -142,9 +142,7 @@ amountSol: 0,
 status: 'failed',
 });
 
-```
 return c.json({ error: 'Trade execution failed', details: error.message }, 500);
-```
 
 }
 });
