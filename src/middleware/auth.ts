@@ -23,19 +23,25 @@ export const authMiddleware = async (c: Context<{ Bindings: Env }>, next: Next) 
   try {
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
-      const secret = new TextEncoder().encode(c.env.JWT_SECRET || 'dev-secret-change-me');
+      const configuredSecret = c.env.JWT_SECRET;
+      if (!configuredSecret) return c.json({ error: 'Authentication not configured', traceId }, 503);
+      const secret = new TextEncoder().encode(configuredSecret);
       const { payload } = await jwtVerify(token, secret);
-      c.set('userId', payload.sub as string);
+      if (!payload.sub || typeof payload.sub !== 'string') {
+        return c.json({ error: 'Invalid token subject', traceId }, 401);
+      }
+      c.set('userId', payload.sub);
       c.set('user', payload);
     } else if (apiKeyHeader) {
-      // TODO: Verify against hashed api_keys in D1 + permissions check
-      c.set('userId', `api-${apiKeyHeader.substring(0,8)}`);
-      c.set('apiKey', apiKeyHeader);
+      // Fail closed until database-backed, hashed, scoped API-key checks exist.
+      return c.json({ error: 'API key authentication is not configured', traceId }, 403);
+    } else {
+      return c.json({ error: 'Unsupported authorization scheme', traceId }, 401);
     }
     await next();
   } catch (err: any) {
     console.error(`[${traceId}] Auth failed:`, err.message);
-    return c.json({ error: 'Auth failed', message: err.message, traceId }, 401);
+    return c.json({ error: 'Auth failed', traceId }, 401);
   }
 };
 

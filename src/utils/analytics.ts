@@ -64,7 +64,7 @@ export async function getPortfolioMetrics(db: D1Database, userId: string): Promi
     wins: wins.length,
     losses: losses.length,
     winRate: confirmedTrades.length > 0 ? wins.length / confirmedTrades.length : 0,
-    totalRealizedPnlSol: totalRealizedPnlSol ?? totalRealizedPnl,
+    totalRealizedPnlSol: totalRealizedPnl,
     totalUnrealizedPnlSol: openPos?.totalUnrealized ?? 0,
     openPositions: openPos?.count ?? 0,
     dailyPnlSol: dailyRow?.total ?? 0,

@@ -17,7 +17,7 @@ import type { Env } from '../types';
 
 const alertsRouter = new Hono<{ Bindings: Env }>();
 
-alertRouter.get('/', async (c) => {
+alertsRouter.get('/', async (c) => {
   const userId = c.get('userId') as string;
   const orm = drizzle(c.env.DB);
   const limit = parseInt(c.req.query('limit') ?? '50');
@@ -33,7 +33,7 @@ alertRouter.get('/', async (c) => {
   return c.json(rows);
 });
 
-alertRouter.post('/:id/read', async (c) => {
+alertsRouter.post('/:id/read', async (c) => {
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
   const orm = drizzle(c.env.DB);
@@ -45,14 +45,14 @@ alertRouter.post('/:id/read', async (c) => {
   return c.json({ ok: true });
 });
 
-alertRouter.post('/read-all', async (c) => {
+alertsRouter.post('/read-all', async (c) => {
   const userId = c.get('userId') as string;
   const orm = drizzle(c.env.DB);
   await orm.update(alerts).set({ isRead: 1 }).where(eq(alerts.userId, userId));
   return c.json({ ok: true });
 });
 
-alertRouter.delete('/:id', async (c) => {
+alertsRouter.delete('/:id', async (c) => {
   const userId = c.get('userId') as string;
   const id = c.req.param('id');
   const orm = drizzle(c.env.DB);
