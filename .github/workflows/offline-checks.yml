@@ -1,7 +1,7 @@
 name: pump offline code check
 on:
   push:
-    branches: [fix/trade-route-validation-20261113]
+    branches: [main, fix/trade-route-validation-20261113]
   pull_request:
   workflow_dispatch:
 permissions:
